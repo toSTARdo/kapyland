@@ -1,40 +1,32 @@
 import os
 import random
-import json
 import threading
 from datetime import datetime
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+import pymongo
 
-# --- 1. ВЕБ-СЕРВЕР ---
+# --- 1. WEB SERVER (For Render Health Checks) ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🐾 Kapyland працює!"
+    return "🐾 Kapyland is running with MongoDB Atlas!"
 
 def run_flask():
+    # Render uses port 8080 by default, or provides a PORT env var
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- 2. ЛОГІКА БОТА ---
-DB_FILE = "kapyland_db.json"
+# --- 2. DATABASE SETUP ---
+# You must set MONGO_URI in Render Environment Variables
+MONGO_URI = os.environ.get("MONGO_URI")
+client = pymongo.MongoClient(MONGO_URI)
+db = client["kapyland_db"]
+users_col = db["users"]
 
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
-
-def save_data(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f)
-
-# --- СПИСКИ ЖАРТІВ ---
+# --- 3. DATA & TEXTS ---
 
 ORIGIN_STORIES = [
     "📦 Ти знайшов заклеєну коробку біля смітника. Всередині була вона — 20 кілограмів чистої апатії.",
@@ -83,18 +75,23 @@ FEED_RESTRICTION_JOKES = [
     "🚫 Твоя капібара стала більша за синього кита і була забрана морськими біологами. Повернуть завтра"
 ]
 
+# --- 4. BOT COMMANDS ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id not in kapyland_db:
-        kapyland_db[user_id] = {
+    # Check database instead of local dict
+    user_data = users_col.find_one({"_id": user_id})
+    
+    if not user_data:
+        new_user = {
+            "_id": user_id,
             "weight": 20.0, 
             "kapy_name": "Безіменна булочка",
             "last_feed_date": "" 
         }
-        save_data(kapyland_db)
+        users_col.insert_one(new_user)
         
         story = random.choice(ORIGIN_STORIES)
-        
         await update.message.reply_text(
             f"✨ **Вітаємо у Kapyland!** ✨\n\n"
             f"{story}\n\n"
@@ -108,97 +105,114 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id not in kapyland_db:
-        await update.message.reply_text("❌ Спочатку /start!")
-        return
     new_name = " ".join(context.args)
     if not new_name:
         await update.message.reply_text("📝 Пиши: `/name Ім'я`", parse_mode="Markdown")
         return
-    kapyland_db[user_id]["kapy_name"] = new_name
-    save_data(kapyland_db)
-    await update.message.reply_text(f"✅ Тепер цю купу хутра звати **{new_name}**.")
+    
+    result = users_col.update_one({"_id": user_id}, {"$set": {"kapy_name": new_name}})
+    if result.matched_count > 0:
+        await update.message.reply_text(f"✅ Тепер цю купу хутра звати **{new_name}**.")
+    else:
+        await update.message.reply_text("❌ Спочатку /start!")
 
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id in kapyland_db:
-        today = datetime.now().strftime("%Y-%m-%d")
-        last_fed = kapyland_db[user_id].get("last_feed_date", "")
+    user_data = users_col.find_one({"_id": user_id})
 
-        if last_fed == today:
-            restriction_msg = random.choice(FEED_RESTRICTION_JOKES)
-            await update.message.reply_text(f"{restriction_msg}")
-            return
-
-        rand_val = random.random()
-        k_name = kapyland_db[user_id].get("kapy_name", "Капібара")
-
-        if rand_val < 0.45:
-            loss = round(random.uniform(2.0, 5.0), 2)
-            kapyland_db[user_id]["weight"] = max(1.0, round(kapyland_db[user_id]["weight"] - loss, 2))
-            joke = random.choice(FAIL_MESSAGES)
-            msg = f"📉 **{k_name}** схудла на {loss}кг!\n_{joke}_"
-        
-        elif rand_val < 0.55:
-            joke = random.choice(EQUILIBRIUM_MESSAGES)
-            msg = f"⚖️ **{k_name}** не змінила вагу.\n_{joke}_"
-        
-        else:
-            gain = round(random.uniform(0.5, 3.5), 2)
-            kapyland_db[user_id]["weight"] = round(kapyland_db[user_id]["weight"] + gain, 2)
-            joke = random.choice(EDGY_JOKES)
-            msg = (f"🍊 **{k_name}** поїла! +{gain}кг.\n"
-                   f"⚖️ Вага: **{kapyland_db[user_id]['weight']}кг**.\n\n"
-                   f"_{joke}_")
-            
-        kapyland_db[user_id]["last_feed_date"] = today
-        save_data(kapyland_db)
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    else:
+    if not user_data:
         await update.message.reply_text("⚠️ Напиши /start, довбню.")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    if user_data.get("last_feed_date") == today:
+        await update.message.reply_text(random.choice(FEED_RESTRICTION_JOKES))
+        return
+
+    rand_val = random.random()
+    current_weight = user_data["weight"]
+    k_name = user_data["kapy_name"]
+
+    if rand_val < 0.45:
+        loss = round(random.uniform(2.0, 5.0), 2)
+        new_weight = max(1.0, round(current_weight - loss, 2))
+        msg = f"📉 **{k_name}** схудла на {loss}кг!\n_{random.choice(FAIL_MESSAGES)}_"
+    elif rand_val < 0.55:
+        new_weight = current_weight
+        msg = f"⚖️ **{k_name}** не змінила вагу.\n_{random.choice(EQUILIBRIUM_MESSAGES)}_"
+    else:
+        gain = round(random.uniform(0.5, 3.5), 2)
+        new_weight = round(current_weight + gain, 2)
+        msg = (f"🍊 **{k_name}** поїла! +{gain}кг.\n"
+               f"⚖️ Вага: **{new_weight}кг**.\n\n"
+               f"_{random.choice(EDGY_JOKES)} _")
+            
+    # Update database
+    users_col.update_one(
+        {"_id": user_id}, 
+        {"$set": {"weight": new_weight, "last_feed_date": today}}
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not kapyland_db:
-        await update.message.reply_text("💨 Тут пусто.")
-        return
-    sorted_users = sorted(kapyland_db.items(), key=lambda x: x[1]['weight'], reverse=True)
+    # MongoDB sort: -1 for descending
+    top_users = users_col.find().sort("weight", -1).limit(10)
+    
     msg = "🏆 **ЗАЛА СЛАВИ ТА ОЖИРІННЯ** 🏆\n\n"
-    for i, (uid, info) in enumerate(sorted_users[:10]):
-        name = info.get("kapy_name", "Щось жирне")
-        weight = info.get("weight", 0)
+    count = 0
+    for i, user in enumerate(top_users):
+        count += 1
+        name = user.get("kapy_name", "Щось жирне")
+        weight = user.get("weight", 0)
         medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🐾"
         msg += f"{medal} {name}: **{weight}кг**\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    
+    if count == 0:
+        await update.message.reply_text("💨 Тут поки пусто.")
+    else:
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id in kapyland_db:
-        k = kapyland_db[user_id]
-        await update.message.reply_text(f"📊 Капібара **{k['kapy_name']}** важить **{k['weight']}кг**. 🌿")
+    user_data = users_col.find_one({"_id": user_id})
+    if user_data:
+        await update.message.reply_text(f"📊 Капібара **{user_data['kapy_name']}** важить **{user_data['weight']}кг**. 🌿")
     else:
         await update.message.reply_text("💨 У тебе немає капібари.")
 
 async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id in kapyland_db:
-        del kapyland_db[user_id]
-        save_data(kapyland_db)
+    result = users_col.delete_one({"_id": user_id})
+    if result.deleted_count > 0:
         await update.message.reply_text("🌊 Твоя капібара пішла навіки купатися в теплі джерела. Тепер ти зовсім один. 🧘‍♂️")
     else:
         await update.message.reply_text("❔ Тут нема чого видаляти.")
 
+# --- 5. MAIN EXECUTION ---
+
 def main():
+    # Start web server in background
     threading.Thread(target=run_flask, daemon=True).start()
+    
+    # Get Token
     TOKEN = os.environ.get("BOT_TOKEN")
+    if not TOKEN:
+        print("Error: BOT_TOKEN not found!")
+        return
+
     application = Application.builder().token(TOKEN).build()
+
+    # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("name", set_name))
     application.add_handler(CommandHandler("feed", feed))
     application.add_handler(CommandHandler("top", leaderboard))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("delete", delete_kapy))
+
+    # Start the bot
+    print("Bot is starting...")
     application.run_polling()
 
 if __name__ == "__main__":
-    kapyland_db = load_data()
     main()
