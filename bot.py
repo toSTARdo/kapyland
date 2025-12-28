@@ -44,7 +44,7 @@ EDGY_JOKES = [
     "Ще один шматочок, і вона пригравітує Місяць до Землі 🌌",
     "Твоя капібара виглядає так, ніби вона щойно з'їла чиїсь надії та мрії 💭",
     "Твоя капібара стала на крок ближче до ідеальної форми кулі ⚪",
-    "Вона їсть, щоб забути про порожнечу всередині. Як і ти... 🕳️",
+    "Вона їсть, щоб забути про порожнечу ventilated всередині. Як і ти... 🕳️",
     "Сподіваюся, ти теж так дбаєш про власне здоров'я, як про цю товстуню... 🧂",
     "Вона стає настільки великою, що скоро держава забере її на прогодівлю ЗСУ 🫡",
     "Це не вага, це накопичена ненависть до людства 😈",
@@ -75,11 +75,26 @@ FEED_RESTRICTION_JOKES = [
     "🚫 Твоя капібара стала більша за синього кита і була забрана морськими біологами. Повернуть завтра"
 ]
 
+# --- ДОПОМІЖНА ЛОГІКА ДЛЯ ЛОКАЛЬНОГО ТОПУ ---
+
+def update_chat_list(user_id, chat_id, full_name):
+    """Оновлює список чатів, де 'засвітився' користувач"""
+    users_col.update_one(
+        {"_id": user_id},
+        {
+            "$addToSet": {"chats": chat_id},
+            "$set": {"full_name": full_name}
+        },
+        upsert=True
+    )
+
 # --- 4. BOT COMMANDS ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    # Check database instead of local dict
+    chat_id = str(update.effective_chat.id)
+    full_name = update.effective_user.full_name
+    
     user_data = users_col.find_one({"_id": user_id})
     
     if not user_data:
@@ -87,7 +102,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "_id": user_id,
             "weight": 20.0, 
             "kapy_name": "Безіменна булочка",
-            "last_feed_date": "" 
+            "last_feed_date": "",
+            "chats": [chat_id],
+            "full_name": full_name
         }
         users_col.insert_one(new_user)
         
@@ -101,15 +118,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     else:
+        update_chat_list(user_id, chat_id, full_name)
         await update.message.reply_text("🐾 Твоя капібара все ще тут. Перевір /stats.")
 
 async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
+    chat_id = str(update.effective_chat.id)
     new_name = " ".join(context.args)
     if not new_name:
         await update.message.reply_text("📝 Пиши: `/name Ім'я`", parse_mode="Markdown")
         return
     
+    update_chat_list(user_id, chat_id, update.effective_user.full_name)
     result = users_col.update_one({"_id": user_id}, {"$set": {"kapy_name": new_name}})
     if result.matched_count > 0:
         await update.message.reply_text(f"✅ Тепер цю купу хутра звати **{new_name}**.")
@@ -118,12 +138,14 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
+    chat_id = str(update.effective_chat.id)
     user_data = users_col.find_one({"_id": user_id})
 
     if not user_data:
         await update.message.reply_text("⚠️ Напиши /start, довбню.")
         return
 
+    update_chat_list(user_id, chat_id, update.effective_user.full_name)
     today = datetime.now().strftime("%Y-%m-%d")
     if user_data.get("last_feed_date") == today:
         await update.message.reply_text(random.choice(FEED_RESTRICTION_JOKES))
@@ -147,7 +169,6 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                f"⚖️ Вага: **{new_weight}кг**.\n\n"
                f"_{random.choice(EDGY_JOKES)} _")
             
-    # Update database
     users_col.update_one(
         {"_id": user_id}, 
         {"$set": {"weight": new_weight, "last_feed_date": today}}
@@ -155,20 +176,23 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # MongoDB sort: -1 for descending
-    top_users = users_col.find().sort("weight", -1).limit(10)
+    chat_id = str(update.effective_chat.id)
     
-    msg = "🏆 **ЗАЛА СЛАВИ ТА ОЖИРІННЯ** 🏆\n\n"
+    # Фільтруємо ТОП: тільки ті, хто в цьому чаті
+    top_users = users_col.find({"chats": chat_id}).sort("weight", -1).limit(10)
+    
+    msg = "🏆 **ЗАЛА СЛАВИ ТА ОЖИРІННЯ ЧАТУ** 🏆\n\n"
     count = 0
     for i, user in enumerate(top_users):
         count += 1
         name = user.get("kapy_name", "Щось жирне")
+        owner = user.get("full_name", "Анонім")
         weight = user.get("weight", 0)
         medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🐾"
-        msg += f"{medal} {name}: **{weight}кг**\n"
+        msg += f"{medal} {name} ({owner}): **{weight}кг**\n"
     
     if count == 0:
-        await update.message.reply_text("💨 Тут поки пусто.")
+        await update.message.reply_text("💨 У цьому чаті поки ніхто не годував капібару.")
     else:
         await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -191,10 +215,8 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- 5. MAIN EXECUTION ---
 
 def main():
-    # Start web server in background
     threading.Thread(target=run_flask, daemon=True).start()
     
-    # Get Token
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
         print("Error: BOT_TOKEN not found!")
@@ -202,7 +224,6 @@ def main():
 
     application = Application.builder().token(TOKEN).build()
 
-    # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("name", set_name))
     application.add_handler(CommandHandler("feed", feed))
@@ -210,7 +231,6 @@ def main():
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("delete", delete_kapy))
 
-    # Start the bot
     print("Bot is starting...")
     application.run_polling()
 
