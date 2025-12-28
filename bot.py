@@ -395,7 +395,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚖️ {u['weight']}кг\n"
         f"✨ Благословення: {', '.join(u['blessings']) or 'немає'}\n"
         f"💀 Прокляття: {', '.join(u['curses']) or 'немає'}",
-        f"⛓️ **Довічні кайдани:** {", ".join(u.get('eternal_curses', [])) or "немає"}"
+        f"⛓️ **Довічні кайдани:** {", ".join(u.get('eternal_curses', [])) or "немає"}",
         parse_mode="Markdown",
     )
 
