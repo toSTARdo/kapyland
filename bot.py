@@ -340,12 +340,13 @@ async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
     u = users_col.find_one({"_id": str(update.effective_user.id)})
+
     await update.message.reply_text(
-        f"📊 **{escape_markdown(u['kapy_name'],2)}**\n"
+        f"📊 **{u['kapy_name']}**\n"
         f"⚖️ {u['weight']}кг\n"
         f"✨ Благословення: {', '.join(u['blessings']) or 'немає'}\n"
         f"💀 Прокляття: {', '.join(u['curses']) or 'немає'}",
-        parse_mode="MarkdownV2",
+        parse_mode="Markdown",
     )
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
