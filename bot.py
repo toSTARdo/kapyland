@@ -327,7 +327,7 @@ async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         t = random.choice(users)
         users_col.update_one(
             {"_id": t["_id"]},
-            {"$set": {"kapy_name": f\"Ісус {t['kapy_name']}\"}},
+            {"$set": {"kapy_name": f"Ісус {t['kapy_name']}"}},
         )
         msg += f"👼 {t['kapy_name']} стала священною."
 
