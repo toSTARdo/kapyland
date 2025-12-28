@@ -106,30 +106,6 @@ CURSES = {
 def today():
     return datetime.now().strftime("%Y-%m-%d")
 
-def ensure_user(update: Update):
-    u_id = str(update.effective_user.id)
-    c_id = str(update.effective_chat.id)
-
-    user = users_col.find_one({"_id": u_id})
-    if not user:
-        users_col.insert_one({
-            "_id": u_id,
-            "kapy_name": "Безіменна булочка",
-            "weight": 20.0,
-            "last_feed_date": "",
-            "chats": [c_id],
-            "blessings": [],
-            "curses": [],
-            "eternal_curses": [],
-            "history": [0.0],
-            "full_name": update.effective_user.full_name,
-        })
-    else:
-        users_col.update_one(
-            {"_id": u_id},
-            {"$addToSet": {"chats": c_id}},
-        )
-
 def sanitize_weight(w, curses):
     if "Сліпота" in curses:
         return "[ПРИХОВАНО]"
@@ -139,6 +115,79 @@ def sanitize_weight(w, curses):
         random.shuffle(l)
         txt = "".join(l)
     return f"**{txt}кг**"
+
+# ===================== DAILY EFFECTS =====================
+
+def daily_effects(u):
+    if u.get("last_daily_effect") == today():
+        return []
+
+    log = []
+
+    # 5% new blessing
+    if random.random() < 0.05:
+        avail = list(set(BLESSINGS) - set(u["blessings"]))
+        if avail:
+            b = random.choice(avail)
+            u["blessings"].append(b)
+            log.append(f"✨ Отримано благословення: {b}")
+
+    # 5% lose blessing
+    if u["blessings"] and random.random() < 0.05:
+        b = random.choice(u["blessings"])
+        u["blessings"].remove(b)
+        log.append(f"💔 Втрачено благословення: {b}")
+
+    # 5% new curse
+    if random.random() < 0.05:
+        avail = list(set(CURSES) - set(u["curses"]) - set(u["eternal_curses"]))
+        if avail:
+            c = random.choice(avail)
+            u["curses"].append(c)
+            log.append(f"💀 Отримано прокляття: {c}")
+
+    # 5% lose curse
+    if u["curses"] and random.random() < 0.05:
+        c = random.choice(u["curses"])
+        u["curses"].remove(c)
+        log.append(f"🕊 Прокляття зникло: {c}")
+
+    users_col.update_one(
+        {"_id": u["_id"]},
+        {
+            "$set": {
+                "blessings": u["blessings"],
+                "curses": u["curses"],
+                "last_daily_effect": today(),
+            }
+        },
+    )
+
+    return log
+
+# ===================== USER =====================
+
+def ensure_user(update: Update):
+    uid = str(update.effective_user.id)
+    cid = str(update.effective_chat.id)
+
+    u = users_col.find_one({"_id": uid})
+    if not u:
+        users_col.insert_one({
+            "_id": uid,
+            "kapy_name": "Безіменна булочка",
+            "weight": 20.0,
+            "last_feed_date": "",
+            "last_daily_effect": "",
+            "chats": [cid],
+            "blessings": [],
+            "curses": [],
+            "eternal_curses": [],
+            "history": [0.0],
+        })
+    else:
+        users_col.update_one({"_id": uid}, {"$addToSet": {"chats": cid}})
+        daily_effects(u)
 
 # ===================== TRACK CHAT =====================
 
@@ -346,6 +395,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚖️ {u['weight']}кг\n"
         f"✨ Благословення: {', '.join(u['blessings']) or 'немає'}\n"
         f"💀 Прокляття: {', '.join(u['curses']) or 'немає'}",
+        f"⛓️ **Довічні кайдани:** {", ".join(u.get('eternal_curses', [])) or "немає"}"
         parse_mode="Markdown",
     )
 
