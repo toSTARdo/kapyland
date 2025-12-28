@@ -112,14 +112,14 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rand_val = random.random()
         k_name = kapyland_db[user_id].get("kapy_name", "Капібара")
 
-        if rand_val < 0.35:
+        if rand_val < 0.45 and rand_val >= 0:
             loss = round(random.uniform(2.0, 5.0), 2)
             kapyland_db[user_id]["weight"] = max(1.0, round(kapyland_db[user_id]["weight"] - loss, 2))
             save_data(kapyland_db)
             joke = random.choice(FAIL_MESSAGES)
             await update.message.reply_text(f"💀 **{k_name}** схудла на {loss}кг!\n_{joke}_", parse_mode="Markdown")
         
-        elif rand_val < 0.50:
+        elif rand_val < 0.55 and rand_val >= 0.45:
             joke = random.choice(EQUILIBRIUM_MESSAGES)
             await update.message.reply_text(f"⚖️ **{k_name}** не змінила вагу.\n_{joke}_", parse_mode="Markdown")
         
