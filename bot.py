@@ -160,7 +160,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if u["last_feed_date"] == "":
         story = random.choice(ORIGIN_STORIES)
         await update.message.reply_text(
-            f"✨ **Вітаємо у Kapyland!** ✨\n\n"
             f"{story}\n\n"
             f"🍊 Зараз вона важить **20кг**.\n"
             f"🏷️ Дай їй ім'я: `/name Кличка`.\n"
@@ -352,7 +351,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c_id = str(update.effective_chat.id)
     top = users_col.find({"chats": c_id}).sort("weight", -1).limit(10)
-    msg = "🏆 **ТОП КАПІБАР** 🏆\n\n"
+    msg = "🏆 **ТОП ЛЕГЕНДАРНИХ КАПІБАР** 🏆\n\n"
     for i, u in enumerate(top):
         msg += f"{i+1}. {u['kapy_name']} — **{u['weight']}кг**\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -361,7 +360,7 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = users_col.delete_one({"_id": str(update.effective_user.id)})
     if res.deleted_count:
         await update.message.reply_text(
-            "🌊 Твоя капібара пішла навіки купатися в теплі джерела. Тепер ти зовсім один. 🧘‍♂️"
+            "🌊 Твоя капібара пішла навіки купатися в теплі джерела. Тепер ти зовсім один..."
         )
     else:
         await update.message.reply_text("❔ Тут нема чого видаляти.")
