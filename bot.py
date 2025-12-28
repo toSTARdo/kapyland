@@ -2,6 +2,7 @@ import os
 import random
 import json
 import threading
+from datetime import datetime
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -77,7 +78,12 @@ EQUILIBRIUM_MESSAGES = [
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id not in kapyland_db:
-        kapyland_db[user_id] = {"weight": 20.0, "kapy_name": "Безіменна булочка"}
+        # Додано поле last_feed_date
+        kapyland_db[user_id] = {
+            "weight": 20.0, 
+            "kapy_name": "Безіменна булочка",
+            "last_feed_date": "" 
+        }
         save_data(kapyland_db)
         
         story = random.choice(ORIGIN_STORIES)
@@ -109,6 +115,15 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id in kapyland_db:
+        # --- ПЕРЕВІРКА ОБМЕЖЕННЯ ЧАСУ ---
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_fed = kapyland_db[user_id].get("last_feed_date", "")
+
+        if last_fed == today:
+            await update.message.reply_text("🚫 Твоя капібара вже сита! Годувати можна лише один раз на день. Приходь завтра.")
+            return
+        # -------------------------------
+
         rand_val = random.random()
         k_name = kapyland_db[user_id].get("kapy_name", "Капібара")
 
@@ -126,14 +141,15 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             gain = round(random.uniform(0.5, 3.5), 2)
             kapyland_db[user_id]["weight"] = round(kapyland_db[user_id]["weight"] + gain, 2)
-            save_data(kapyland_db)
             joke = random.choice(EDGY_JOKES)
-            await update.message.reply_text(
-                f"🍊 **{k_name}** поглинула їжу! +{gain}кг.\n"
-                f"Вага: {kapyland_db[user_id]['weight']}кг.\n\n"
-                f"_{joke}_", 
-                parse_mode="Markdown"
-            )
+            msg = (f"🍊 **{k_name}** поглинула їжу! +{gain}кг.\n"
+                   f"Вага: {kapyland_db[user_id]['weight']}кг.\n\n"
+                   f"_{joke}_")
+            
+            # Оновлюємо дату останнього годування
+            kapyland_db[user_id]["last_feed_date"] = today
+            save_data(kapyland_db)
+            await update.message.reply_text(msg, parse_mode="Markdown")
     else:
         await update.message.reply_text("Напиши /start, нікчемо.")
 
