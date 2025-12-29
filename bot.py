@@ -141,9 +141,7 @@ def daily_effects(u):
     # 10% new blessing
     if random.random() < chance:
         avail = list(set(BLESSINGS) - set(u["blessings"]))
-        update.message.reply_text("sup  1")
         if avail:
-            update.message.reply_text("sup  2")
             b = random.choice(avail)
             u["blessings"].append(b)
             log.append(f"✨ Отримано благословення: {b}")
