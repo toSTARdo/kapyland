@@ -495,10 +495,12 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else u.get("tg_username", "Невідомий")
         )
 
+        weight_txt = sanitize_weight(u["weight"], u.get("curses", []))
+
         msg += (
             f"{i}. 🐾 **{u['kapy_name']}**"
             f"  (👤 {tg}) - "
-            f"**{u['weight']}кг**\n\n"
+            f"{weight_txt}\n\n"
         )
 
     await update.message.reply_text(msg, parse_mode="Markdown")
