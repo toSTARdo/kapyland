@@ -106,6 +106,18 @@ CURSES = {
 def today():
     return datetime.now().strftime("%Y-%m-%d")
 
+def is_sunday():
+    return datetime.now().weekday() == 6
+
+def week_id():
+    return datetime.now().strftime("%Y-%W")
+
+def all_fed_today(chat_id):
+    users = list(users_col.find({"chats": chat_id}))
+    if not users:
+        return False
+    return all(u.get("last_feed_date") == today() for u in users)
+
 def sanitize_weight(w, curses):
     if "Сліпота" in curses:
         return "[ПРИХОВАНО]"
@@ -203,7 +215,9 @@ def ensure_user(update: Update):
                 },
             },
         )
+        u = users_col.find_one({"_id": uid})
         daily_effects(u)
+
 
 # ===================== TRACK CHAT =====================
 
@@ -213,6 +227,27 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats_col.update_one(
         {"chat_id": str(update.effective_chat.id), "date": today()},
         {"$inc": {"letters": len(update.message.text)}},
+        upsert=True,
+    )
+
+async def maybe_auto_judgment(update: Update):
+    c_id = str(update.effective_chat.id)
+
+    if not is_sunday():
+        return
+
+    if not all_fed_today(c_id):
+        return
+
+    state = chat_state_col.find_one({"chat_id": c_id})
+    if state and state.get("week") == week_id() and state.get("judged"):
+        return
+
+    await judgment_day(update, None)
+
+    chat_state_col.update_one(
+        {"chat_id": c_id},
+        {"$set": {"week": week_id(), "judged": True}},
         upsert=True,
     )
 
@@ -274,16 +309,23 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         r = random.random()
         if r < 0.4:
             gain = -gain
-            log += random.choice(FAIL_MESSAGES) + "\n"
         elif r < 0.5:
             gain = 0
-            log += random.choice(EQUILIBRIUM_MESSAGES) + "\n"
 
     if "Дієта" in u["curses"]:
         gain = 0
 
     if "Лудоман" in u["curses"]:
         gain += random.uniform(-10, 10)
+
+    reaction = ""
+
+    if gain > 0:
+        reaction = random.choice(EDGY_JOKES)
+    elif gain < 0:
+        reaction = random.choice(FAIL_MESSAGES)
+    else:
+        reaction = random.choice(EQUILIBRIUM_MESSAGES)
 
     new_weight = max(1.0, round(u["weight"] + gain, 2))
 
@@ -298,9 +340,11 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"{log}🍊 Приріст: **{round(gain,2)}кг**\n"
         f"⚖️ Вага: {sanitize_weight(new_weight, u['curses'])}\n\n"
-        f"_{random.choice(EDGY_JOKES)}_",
+        f"_{reaction}_",
         parse_mode="Markdown",
     )
+
+    await maybe_auto_judgment(update)
 
 async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c_id = str(update.effective_chat.id)
@@ -421,12 +465,12 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c_id = str(update.effective_chat.id)
     top = users_col.find({"chats": c_id}).sort("weight", -1).limit(10)
 
-    msg = "🏆 **ТОП ЛЕГЕНДАРНИХ КАПІБАР** 🏆\n\n"
+    msg = "🏆**ТОП ЛЕГЕНДАРНИХ КАПІБАР**🏆\n\n"
 
     for i, u in enumerate(top, start=1):
         tg = (
             f"@{u['tg_username']}"
-            if u.get("tg_username")
+            if u.get("tg_name")
             else u.get("tg_name", "Невідомий")
         )
 
@@ -439,10 +483,27 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    res = users_col.delete_one({"_id": str(update.effective_user.id)})
+    uid = str(update.effective_user.id)
+
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ **Це незворотній процес (капібара назавжди втратить довіру)**\n\n"
+            "Якщо ти впевнений:\n"
+            "`/delete YES`",
+            parse_mode="Markdown",
+        )
+        return
+
+    if context.args[0] != "YES":
+        await update.message.reply_text("❌ Видалення скасовано.")
+        return
+
+    res = users_col.delete_one({"_id": uid})
+
     if res.deleted_count:
         await update.message.reply_text(
-            "🌊 Твоя капібара пішла навіки купатися в теплі джерела. Тепер ти зовсім один..."
+            "🌊 Твоя капібара пішла навіки купатися в теплі джерела.\n"
+            "Цього разу — без повернення."
         )
     else:
         await update.message.reply_text("❔ Тут нема чого видаляти.")
