@@ -284,11 +284,13 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
+
+    u = users_col.find_one({"_id": str(update.effective_user.id)})
+    c_id = str(update.effective_chat.id)
+
     effects = daily_effects(u)
     if effects:
         await update.message.reply_text("\n".join(effects))
-    u = users_col.find_one({"_id": str(update.effective_user.id)})
-    c_id = str(update.effective_chat.id)
 
     if u["last_feed_date"] == today():
         await update.message.reply_text(random.choice(FEED_RESTRICTION_JOKES))
@@ -469,19 +471,19 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c_id = str(update.effective_chat.id)
     top = users_col.find({"chats": c_id}).sort("weight", -1).limit(10)
 
-    msg = "🏆**ТОП ЛЕГЕНДАРНИХ КАПІБАР**🏆\n\n"
+    msg = "🏆**ЗАЛ КАПІСЛАВИ**🏆\n\n"
 
     for i, u in enumerate(top, start=1):
         tg = (
-            f"@{u['tg_name']}"
+            f"{u['tg_name']}"
             if u.get("tg_name")
             else u.get("tg_username", "Невідомий")
         )
 
         msg += (
-            f"{i}. 🐾 **{u['kapy_name']}**\n"
-            f"   👤 {tg}\n"
-            f"   ⚖️ **{u['weight']}кг**\n\n"
+            f"{i}. 🐾 **{u['kapy_name']}**"
+            f"  (👤 {tg}) - "
+            f"**{u['weight']}кг**\n\n"
         )
 
     await update.message.reply_text(msg, parse_mode="Markdown")
