@@ -137,7 +137,7 @@ def daily_effects(u):
 
     log = []
 
-    chance = 1.0
+    chance = 0.1
     # 10% new blessing
     if random.random() < chance:
         avail = list(set(BLESSINGS) - set(u["blessings"]))
