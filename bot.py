@@ -33,6 +33,7 @@ client = pymongo.MongoClient(os.environ.get("MONGO_URI"))
 db = client["kapyland_db"]
 users_col = db["users"]
 stats_col = db["chat_stats"]
+chat_state_col = db["chat_state"]
 
 # ===================== DATA =====================
 
@@ -137,7 +138,7 @@ def daily_effects(u):
     log = []
 
     # 5% new blessing
-    if random.random() < 0.05:
+    if random.random() < 0.1:
         avail = list(set(BLESSINGS) - set(u["blessings"]))
         if avail:
             b = random.choice(avail)
@@ -145,13 +146,13 @@ def daily_effects(u):
             log.append(f"✨ Отримано благословення: {b}")
 
     # 5% lose blessing
-    if u["blessings"] and random.random() < 0.05:
+    if u["blessings"] and random.random() < 0.1:
         b = random.choice(u["blessings"])
         u["blessings"].remove(b)
         log.append(f"💔 Втрачено благословення: {b}")
 
     # 5% new curse
-    if random.random() < 0.05:
+    if random.random() < 0.1:
         avail = list(set(CURSES) - set(u["curses"]) - set(u["eternal_curses"]))
         if avail:
             c = random.choice(avail)
@@ -159,7 +160,7 @@ def daily_effects(u):
             log.append(f"💀 Отримано прокляття: {c}")
 
     # 5% lose curse
-    if u["curses"] and random.random() < 0.05:
+    if u["curses"] and random.random() < 0.1:
         c = random.choice(u["curses"])
         u["curses"].remove(c)
         log.append(f"🕊 Прокляття зникло: {c}")
@@ -283,6 +284,9 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
+    effects = daily_effects(u)
+    if effects:
+        await update.message.reply_text("\n".join(effects))
     u = users_col.find_one({"_id": str(update.effective_user.id)})
     c_id = str(update.effective_chat.id)
 
@@ -469,9 +473,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for i, u in enumerate(top, start=1):
         tg = (
-            f"@{u['tg_username']}"
+            f"@{u['tg_name']}"
             if u.get("tg_name")
-            else u.get("tg_name", "Невідомий")
+            else u.get("tg_username", "Невідомий")
         )
 
         msg += (
