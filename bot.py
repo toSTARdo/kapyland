@@ -191,11 +191,13 @@ def ensure_user(update: Update):
 
     u = users_col.find_one({"_id": uid})
 
+    effects = []
+
     if not u:
         users_col.insert_one({
             "_id": uid,
-            "tg_username": username,          # @username
-            "tg_name": display_name,           # First + last
+            "tg_username": username,
+            "tg_name": display_name,
             "kapy_name": "Безіменна булочка",
             "weight": 20.0,
             "last_feed_date": "",
@@ -218,40 +220,9 @@ def ensure_user(update: Update):
             },
         )
         u = users_col.find_one({"_id": uid})
-        daily_effects(u)
+        effects = daily_effects(u)
 
-
-# ===================== TRACK CHAT =====================
-
-async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-    stats_col.update_one(
-        {"chat_id": str(update.effective_chat.id), "date": today()},
-        {"$inc": {"letters": len(update.message.text)}},
-        upsert=True,
-    )
-
-async def maybe_auto_judgment(update: Update):
-    c_id = str(update.effective_chat.id)
-
-    if not is_sunday():
-        return
-
-    if not all_fed_today(c_id):
-        return
-
-    state = chat_state_col.find_one({"chat_id": c_id})
-    if state and state.get("week") == week_id() and state.get("judged"):
-        return
-
-    await judgment_day(update, None)
-
-    chat_state_col.update_one(
-        {"chat_id": c_id},
-        {"$set": {"week": week_id(), "judged": True}},
-        upsert=True,
-    )
+    return effects
 
 # ===================== COMMANDS =====================
 
@@ -284,19 +255,24 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Тепер цю купу хутра звати **{name}**.")
 
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ensure_user(update)
-
+    # Завантажуємо користувача та чат
     u = users_col.find_one({"_id": str(update.effective_user.id)})
     c_id = str(update.effective_chat.id)
 
+    # 1️⃣ Викликаємо daily_effects та показуємо ефекти в чаті
     effects = daily_effects(u)
     if effects:
-        await update.message.reply_text("\n".join(effects))
+        await update.message.reply_text("\n".join(effects), parse_mode="Markdown")
 
+    # 2️⃣ Підвантажуємо користувача знову, щоб щойно отримані ефекти не впливали на сьогоднішній gain
+    u = users_col.find_one({"_id": str(update.effective_user.id)})
+
+    # 3️⃣ Перевірка, чи вже годували сьогодні
     if u["last_feed_date"] == today():
         await update.message.reply_text(random.choice(FEED_RESTRICTION_JOKES))
         return
 
+    # 4️⃣ Обчислюємо приріст ваги
     gain = round(random.uniform(0.5, 5.0), 2)
     log = ""
 
@@ -325,8 +301,7 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "Лудоман" in u["curses"]:
         gain += random.uniform(-10, 10)
 
-    reaction = ""
-
+    # 5️⃣ Вибираємо реакцію капібари
     if gain > 0:
         reaction = random.choice(EDGY_JOKES)
     elif gain < 0:
@@ -334,8 +309,8 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         reaction = random.choice(EQUILIBRIUM_MESSAGES)
 
+    # 6️⃣ Оновлюємо вагу користувача та історію приростів
     new_weight = max(1.0, round(u["weight"] + gain, 2))
-
     users_col.update_one(
         {"_id": u["_id"]},
         {
@@ -344,6 +319,7 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         },
     )
 
+    # 7️⃣ Відправляємо повідомлення про приріст і реакцію
     await update.message.reply_text(
         f"{log}🍊 Приріст: **{round(gain,2)}кг**\n"
         f"⚖️ Вага: {sanitize_weight(new_weight, u['curses'])}\n\n"
@@ -351,6 +327,7 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
+    # 8️⃣ Можливе автоматичне судження у неділю
     await maybe_auto_judgment(update)
 
 async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
