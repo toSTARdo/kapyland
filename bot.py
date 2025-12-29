@@ -168,13 +168,20 @@ def daily_effects(u):
 # ===================== USER =====================
 
 def ensure_user(update: Update):
-    uid = str(update.effective_user.id)
+    tg_user = update.effective_user
+    uid = str(tg_user.id)
     cid = str(update.effective_chat.id)
 
+    username = tg_user.username
+    display_name = tg_user.full_name or "Безіменний смертний"
+
     u = users_col.find_one({"_id": uid})
+
     if not u:
         users_col.insert_one({
             "_id": uid,
+            "tg_username": username,          # @username
+            "tg_name": display_name,           # First + last
             "kapy_name": "Безіменна булочка",
             "weight": 20.0,
             "last_feed_date": "",
@@ -186,7 +193,16 @@ def ensure_user(update: Update):
             "history": [0.0],
         })
     else:
-        users_col.update_one({"_id": uid}, {"$addToSet": {"chats": cid}})
+        users_col.update_one(
+            {"_id": uid},
+            {
+                "$addToSet": {"chats": cid},
+                "$set": {
+                    "tg_username": username,
+                    "tg_name": display_name,
+                },
+            },
+        )
         daily_effects(u)
 
 # ===================== TRACK CHAT =====================
@@ -404,9 +420,22 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c_id = str(update.effective_chat.id)
     top = users_col.find({"chats": c_id}).sort("weight", -1).limit(10)
+
     msg = "🏆 **ТОП ЛЕГЕНДАРНИХ КАПІБАР** 🏆\n\n"
-    for i, u in enumerate(top):
-        msg += f"{i+1}. {u['kapy_name']} — **{u['weight']}кг**\n"
+
+    for i, u in enumerate(top, start=1):
+        tg = (
+            f"@{u['tg_username']}"
+            if u.get("tg_username")
+            else u.get("tg_name", "Невідомий")
+        )
+
+        msg += (
+            f"{i}. 🐾 **{u['kapy_name']}**\n"
+            f"   👤 {tg}\n"
+            f"   ⚖️ **{u['weight']}кг**\n\n"
+        )
+
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
