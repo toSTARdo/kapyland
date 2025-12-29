@@ -365,6 +365,9 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await maybe_auto_judgment(update)
 
 async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = ["807986999"]  # Telegram IDs of allowed admin (me)
+    if str(update.effective_user.id) not in admin_ids:
+        return
     c_id = str(update.effective_chat.id)
     users = list(users_col.find({"chats": c_id}))
 
