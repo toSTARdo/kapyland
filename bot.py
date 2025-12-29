@@ -137,29 +137,30 @@ def daily_effects(u):
 
     log = []
 
-    # 5% new blessing
-    if random.random() < 0.1:
+    chance = 1.0
+    # 10% new blessing
+    if random.random() < chance:
         avail = list(set(BLESSINGS) - set(u["blessings"]))
         if avail:
             b = random.choice(avail)
             u["blessings"].append(b)
             log.append(f"✨ Отримано благословення: {b}")
 
-    # 5% lose blessing
+    # 10% lose blessing
     if u["blessings"] and random.random() < 0.1:
         b = random.choice(u["blessings"])
         u["blessings"].remove(b)
         log.append(f"💔 Втрачено благословення: {b}")
 
-    # 5% new curse
-    if random.random() < 0.1:
+    # 10% new curse
+    if random.random() < chance:
         avail = list(set(CURSES) - set(u["curses"]) - set(u["eternal_curses"]))
         if avail:
             c = random.choice(avail)
             u["curses"].append(c)
             log.append(f"💀 Отримано прокляття: {c}")
 
-    # 5% lose curse
+    # 10% lose curse
     if u["curses"] and random.random() < 0.1:
         c = random.choice(u["curses"])
         u["curses"].remove(c)
