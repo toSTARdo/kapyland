@@ -390,12 +390,14 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
     u = users_col.find_one({"_id": str(update.effective_user.id)})
 
+    eternal = ", ".join(u.get("eternal_curses", [])) or "немає"
+
     await update.message.reply_text(
         f"📊 **{u['kapy_name']}**\n"
-        f"⚖️ {u['weight']}кг\n"
+        f"⚖️ {sanitize_weight(u['weight'], u['curses'])}\n"
         f"✨ Благословення: {', '.join(u['blessings']) or 'немає'}\n"
-        f"💀 Прокляття: {', '.join(u['curses']) or 'немає'}",
-        f"⛓️ **Довічні кайдани:** {", ".join(u.get('eternal_curses', [])) or "немає"}",
+        f"💀 Прокляття: {', '.join(u['curses']) or 'немає'}\n"
+        f"⛓️ **Довічні кайдани:** {eternal}",
         parse_mode="Markdown",
     )
 
