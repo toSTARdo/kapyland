@@ -144,13 +144,15 @@ def daily_effects(u):
         if avail:
             b = random.choice(avail)
             u["blessings"].append(b)
-            log.append(f"✨ Отримано благословення: {b}")
+            desc = BLESSINGS.get(b, "")
+            log.append(f"✨ Отримано благословення: {b} — {desc}")
 
     # 10% lose blessing
     if u["blessings"] and random.random() < 0.1:
         b = random.choice(u["blessings"])
         u["blessings"].remove(b)
-        log.append(f"💔 Втрачено благословення: {b}")
+        desc = BLESSINGS.get(b, "")
+        log.append(f"💔 Втрачено благословення: {b} — {desc}")
 
     # 10% new curse
     if random.random() < chance:
@@ -158,13 +160,15 @@ def daily_effects(u):
         if avail:
             c = random.choice(avail)
             u["curses"].append(c)
-            log.append(f"💀 Отримано прокляття: {c}")
+            desc = CURSES.get(c, "")
+            log.append(f"💀 Отримано прокляття: {c} — {desc}")
 
     # 10% lose curse
     if u["curses"] and random.random() < 0.1:
         c = random.choice(u["curses"])
         u["curses"].remove(c)
-        log.append(f"🕊 Прокляття зникло: {c}")
+        desc = CURSES.get(c, "")
+        log.append(f"🕊 Прокляття зникло: {c} — {desc}")
 
     users_col.update_one(
         {"_id": u["_id"]},
