@@ -224,6 +224,36 @@ def ensure_user(update: Update):
 
     return effects
 
+# ===================== TRACK CHAT =====================
+async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    stats_col.update_one(
+        {"chat_id": str(update.effective_chat.id), "date": today()},
+        {"$inc": {"letters": len(update.message.text)}},
+        upsert=True,
+    )
+
+async def maybe_auto_judgment(update: Update):
+    c_id = str(update.effective_chat.id)
+    if not is_sunday():
+        return
+
+    if not all_fed_today(c_id):
+        return
+
+    state = chat_state_col.find_one({"chat_id": c_id})
+    if state and state.get("week") == week_id() and state.get("judged"):
+        return
+
+    await judgment_day(update, None)
+
+    chat_state_col.update_one(
+        {"chat_id": c_id},
+        {"$set": {"week": week_id(), "judged": True}},
+        upsert=True,
+    )
+
 # ===================== COMMANDS =====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
