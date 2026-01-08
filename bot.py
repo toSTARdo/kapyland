@@ -1008,6 +1008,7 @@ def main():
     app_tg.add_handler(CommandHandler("advice", advice))
     app_tg.add_handler(CommandHandler("update", updategame))
     app_tg.add_handler(CommandHandler("audit", audit_names))
+    app_tg.add_handler(CommandHandler("gacha", gacha))
     app_tg.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
 
     app_tg.run_polling()
