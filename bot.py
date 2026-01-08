@@ -382,98 +382,101 @@ async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE
 
     for c_id in chats:
         users = list(users_col.find({"chats": c_id}))
-        if not users: continue
-
+        
+        # Перевірка на кількість капібар
         if len(users) < 2:
-            # Можна відправити повідомлення, якщо це ручний запуск команди
             if not is_auto:
-                await update.message.reply_text("Для суду необхідно мінімум дві капібари.")
+                await update.message.reply_text("⚖️ Судний день скасовано: у чаті має бути хоча б 2 капібари.")
             continue
 
-        # Вибір ефекту (перенесено всередину циклу, щоб у кожного чату був свій хаос)
-        effect = random.choice(["усереднення", "голодомор", "урожай", "сповідь", "гнів богів","хрест","святе випробування",
-        "кара вавилону", "піст", "непорочне зачаття"])
+        # Вибір ефекту всередині циклу для кожного чату окремо
+        effect = random.choice([
+            "усереднення", "голодомор", "урожай", "сповідь", 
+            "гнів богів", "хрест", "святе випробування",
+            "кара вавилону", "піст", "непорочне зачаття"
+        ])
 
         msg = f"⚡️ **СУДНИЙ ДЕНЬ: {effect.upper()}** ⚡️\n"
 
-    if effect == "усереднення":
-        avg = round(sum(u["weight"] for u in users) / len(users), 2)
-        users_col.update_many({"chats": c_id}, {"$set": {"weight": avg}})
-        msg += f"⚖️ Всі зрівняні до **{avg}кг**."
+        # УСІ ефекти мають бути всередині циклу (з відступом)
+        if effect == "усереднення":
+            avg = round(sum(u["weight"] for u in users) / len(users), 2)
+            users_col.update_many({"chats": c_id}, {"$set": {"weight": avg}})
+            msg += f"⚖️ Всі зрівняні до **{avg}кг**."
 
-    elif effect == "голодомор":
-        t = random.choice(users)
-        users_col.update_one({"_id": t["_id"]}, {"$mul": {"weight": 0.5}})
-        msg += f"💀 {t['kapy_name']} втратила половину ваги."
+        elif effect == "голодомор":
+            t = random.choice(users)
+            users_col.update_one({"_id": t["_id"]}, {"$mul": {"weight": 0.5}})
+            msg += f"💀 {t['kapy_name']} втратила половину ваги."
 
-    elif effect == "урожай":
-        users_col.update_many({"chats": c_id}, {"$inc": {"weight": 50}})
-        msg += "🌾 Благодать! +50кг кожній капібарі."
+        elif effect == "урожай":
+            users_col.update_many({"chats": c_id}, {"$inc": {"weight": 50}})
+            msg += "🌾 Благодать! +50кг кожній капібарі."
 
-    elif effect == "сповідь":
-        users_col.update_many({"chats": c_id}, {"$set": {"curses": []}})
-        msg += "🙏 Всі прокляття знято."
+        elif effect == "сповідь":
+            users_col.update_many({"chats": c_id}, {"$set": {"curses": []}})
+            msg += "🙏 Всі прокляття знято."
 
-    elif effect == "святе випробування":
-        users_col.update_many({"chats": c_id}, {"$set": {"blessings": []}})
-        msg += "🛡 Благословення забрані богами."
+        elif effect == "святе випробування":
+            users_col.update_many({"chats": c_id}, {"$set": {"blessings": []}})
+            msg += "🛡 Благословення забрані огами щоб перевірити капі на міцність."
 
-    elif effect == "хрест":
-        t = random.choice(users)
-        if t.get("curses"):
-            c = random.choice(t["curses"])
-            users_col.update_one(
-                {"_id": t["_id"]},
-                {"$pull": {"curses": c}, "$addToSet": {"eternal_curses": c}},
-            )
-            msg += f"☦️ Прокляття **{c}** стало довічним для {t['kapy_name']}."
-        else:
-            msg += "🕊 Ніхто не мав проклять."
+        elif effect == "хрест":
+            t = random.choice(users)
+            user_curses = t.get("curses", [])
+            if user_curses:
+                c = random.choice(user_curses)
+                users_col.update_one(
+                    {"_id": t["_id"]},
+                    {"$pull": {"curses": c}, "$addToSet": {"eternal_curses": c}},
+                )
+                msg += f"☦️ Прокляття **{c}** стало довічним для {t['kapy_name']}."
+            else:
+                msg += "🕊 Обрана капібара не мала проклять, тому боги її помилували."
 
-    elif effect == "кара вавилону":
-        all_b, all_c = [], []
-        for u in users:
-            all_b += u.get("blessings", [])
-            all_c += u.get("curses", [])
+        elif effect == "кара вавилону":
+            all_b, all_c = [], []
+            for u in users:
+                all_b += u.get("blessings", [])
+                all_c += u.get("curses", [])
+            random.shuffle(all_b)
+            random.shuffle(all_c)
+            for u in users:
+                users_col.update_one(
+                    {"_id": u["_id"]},
+                    {
+                        "$set": {
+                            "blessings": [all_b.pop()] if all_b else [],
+                            "curses": [all_c.pop()] if all_c else [],
+                        }
+                    },
+                )
+            msg += "🌀 Ефекти перемішані між усіма гравцями. Вакханалія!"
 
-        random.shuffle(all_b)
-        random.shuffle(all_c)
+        elif effect == "піст":
+            sorted_u = sorted(users, key=lambda x: x["weight"])
+            thin, fat = sorted_u[0], sorted_u[-1]
+            users_col.update_one({"_id": thin["_id"]}, {"$inc": {"weight": 100}})
+            users_col.update_one({"_id": fat["_id"]}, {"$mul": {"weight": 0.8}})
+            msg += f"🥖 Скромна {thin['kapy_name']} отримала +20кг, а товстун {fat['kapy_name']} втратив 20% ваги."
 
-        for u in users:
-            users_col.update_one(
-                {"_id": u["_id"]},
-                {
-                    "$set": {
-                        "blessings": [all_b.pop()] if all_b else [],
-                        "curses": [all_c.pop()] if all_c else [],
-                    }
-                },
-            )
-        msg += "🌀 Ефекти перемішані. Хаос."
+        elif effect == "непорочне зачаття":
+            t = random.choice(users)
+            new_name = f"Святий {t['kapy_name']}"
+            users_col.update_one({"_id": t["_id"]}, {"$set": {"kapy_name": new_name}})
+            msg += f"👼 {t['kapy_name']} тепер носить титул **{new_name}**."
 
-    elif effect == "піст":
-        sorted_u = sorted(users, key=lambda x: x["weight"])
-        thin, fat = sorted_u[0], sorted_u[-1]
-        users_col.update_one({"_id": thin["_id"]}, {"$inc": {"weight": 100}})
-        users_col.update_one({"_id": fat["_id"]}, {"$mul": {"weight": 0.8}})
-        msg += f"🥖 {thin['kapy_name']} +100кг, {fat['kapy_name']} на дієті."
+        elif effect == "гнів богів":
+            t = random.choice(users)
+            users_col.delete_one({"_id": t["_id"]})
+            msg += f"🔥 {t['kapy_name']} була стерта з буття за гріхи господаря. Або просто вони тицьнули не ту кнопку"
 
-    elif effect == "непорочне зачаття":
-        t = random.choice(users)
-        users_col.update_one(
-            {"_id": t["_id"]},
-            {"$set": {"kapy_name": f"Святий {t['kapy_name']}"}},
-        )
-        msg += f"👼 {t['kapy_name']} стала священною."
-
-    elif effect == "гнів богів":
-        t = random.choice(users)
-        users_col.delete_one({"_id": t["_id"]})
-        msg += f"🔥 {t['kapy_name']} стерта з буття."
-
-    try:
+        # Відправка повідомлення для конкретного чату
+        try:
             await context.bot.send_message(chat_id=c_id, text=msg, parse_mode="Markdown")
-    except: continue
+        except Exception as e:
+            print(f"Помилка відправки в чат {c_id}: {e}")
+            continue
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
@@ -661,7 +664,7 @@ def main():
     job_queue.run_repeating(
         lambda ctx: judgment_day(None, ctx), # Передаємо None замість update
         interval=345600, 
-        first=datetime.time(hour=20, minute=7, tzinfo=kyiv_tz)
+        first=datetime.time(hour=20, minute=35, tzinfo=kyiv_tz)
     )
 
     app_tg.add_handler(CommandHandler("start", start))
