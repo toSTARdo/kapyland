@@ -385,9 +385,20 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
-async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    c_id = str(update.effective_chat.id)
-    users = list(users_col.find({"chats": c_id}))
+async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE):
+    # Визначаємо, чи це автоматичний запуск чи команда
+    is_auto = update is None
+    
+    if is_auto:
+        # Для авто-запуску беремо всі чати з бази
+        chats = users_col.distinct("chats")
+    else:
+        # Для команди беремо тільки цей чат
+        chats = [str(update.effective_chat.id)]
+
+    for c_id in chats:
+        users = list(users_col.find({"chats": c_id}))
+        if not users: continue
 
     effect = random.choice([
         "усереднення",
@@ -479,7 +490,12 @@ async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users_col.delete_one({"_id": t["_id"]})
         msg += f"🔥 {t['kapy_name']} стерта з буття."
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    if is_auto:
+            try:
+                await context.bot.send_message(chat_id=c_id, text=msg, parse_mode="Markdown")
+            except: pass
+        else:
+            await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
@@ -669,10 +685,11 @@ def main():
 
     # 2. Судний День (кожні 4 дні о 20:00)
     # interval = 345600 секунд (4 дні)
+    # 2. Судний День (кожні 4 дні о 20:00)
     job_queue.run_repeating(
-        judgment_day, 
+        lambda ctx: judgment_day(None, ctx), # Передаємо None замість update
         interval=345600, 
-        first=datetime.time(hour=19, minute=51, tzinfo=kyiv_tz)
+        first=datetime.time(hour=20, minute=0, tzinfo=kyiv_tz)
     )
 
     app_tg.add_handler(CommandHandler("start", start))
