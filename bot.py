@@ -664,15 +664,15 @@ def main():
     # 1. Надобраніч (щодня о 22:00)
     job_queue.run_daily(
         send_goodnight, 
-        time=datetime.time(hour=19, minute=40, tzinfo=kyiv_tz)
+        time=datetime.time(hour=19, minute=50, tzinfo=kyiv_tz)
     )
 
     # 2. Судний День (кожні 4 дні о 20:00)
     # interval = 345600 секунд (4 дні)
     job_queue.run_repeating(
-        judgment_day_job, 
+        judgment_day, 
         interval=345600, 
-        first=datetime.time(hour=19, minute=41, tzinfo=kyiv_tz)
+        first=datetime.time(hour=19, minute=51, tzinfo=kyiv_tz)
     )
 
     app_tg.add_handler(CommandHandler("start", start))
