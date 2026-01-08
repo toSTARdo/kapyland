@@ -663,7 +663,6 @@ def main():
     app_tg.add_handler(CommandHandler("start", start))
     app_tg.add_handler(CommandHandler("name", set_name))
     app_tg.add_handler(CommandHandler("feed", feed))
-    app_tg.add_handler(CommandHandler("judgment", judgment_day))
     app_tg.add_handler(CommandHandler("stats", stats))
     app_tg.add_handler(CommandHandler("top", leaderboard))
     app_tg.add_handler(CommandHandler("delete", delete_kapy))
