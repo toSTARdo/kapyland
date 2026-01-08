@@ -278,15 +278,47 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
+    uid = str(update.effective_user.id)
     name = " ".join(context.args)
+    
     if not name:
         await update.message.reply_text("📝 Пиши: `/name Ім'я`", parse_mode="Markdown")
         return
+
+    # 1. Словник з секретними іменами та бонусами
+    EASTER_EGGS = {
+        "Труп": 5.0,
+        "Політех": -15.0,
+        "Гачібара": 20.0,
+        "Капібара": 10.0,
+        "Тетерів": 10.0,
+        "Капібара": 10.0,
+        "Розробник": 1.0  # символічний бонус
+    }
+
+    bonus_msg = ""
+    bonus_weight = 0.0
+
+    # 2. Перевірка на співпадіння (ігноруючи регістр)
+    for egg_name, weight in EASTER_EGGS.items():
+        if name.lower() == egg_name.lower():
+            bonus_weight = weight
+            bonus_msg = f"\n✨ Ого! Це легендарне ім'я додало тобі **{bonus_weight}кг**!"
+            break
+
+    # 3. Оновлюємо ім'я та додаємо вагу (якщо є бонус)
     users_col.update_one(
-        {"_id": str(update.effective_user.id)},
-        {"$set": {"kapy_name": name}},
+        {"_id": uid},
+        {
+            "$set": {"kapy_name": name},
+            "$inc": {"weight": bonus_weight} # $inc додає значення до існуючого
+        }
     )
-    await update.message.reply_text(f"✅ Тепер цю купу хутра звати **{name}**.")
+
+    await update.message.reply_text(
+        f"✅ Тепер цю купу хутра звати **{name}**.{bonus_msg}",
+        parse_mode="Markdown"
+    )
 
 async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Завантажуємо користувача та чат
@@ -307,12 +339,12 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # 4️⃣ Обчислюємо приріст ваги
-    gain = round(random.uniform(0.5, 5.0), 2)
+    gain = random.randint(1, 10) * 0.5
     log = ""
 
     if "Четверта стіна" in u["blessings"]:
         st = stats_col.find_one({"chat_id": c_id, "date": today()}) or {"letters": 10}
-        bonus = round(math.log10(max(st["letters"], 10)), 2)
+        bonus = round(math.log10(max(st["letters"], 10)) * 2) / 2
         gain += bonus
         log += f"📺 Четверта стіна +{bonus}кг\n"
 
@@ -344,7 +376,7 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reaction = random.choice(EQUILIBRIUM_MESSAGES)
 
     # 6️⃣ Оновлюємо вагу користувача та історію приростів
-    new_weight = max(1.0, round(u["weight"] + gain, 2))
+    new_weight = max(1.0, round(u["weight"] * 2 + gain * 2) / 2)
     users_col.update_one(
         {"_id": u["_id"]},
         {
@@ -506,6 +538,23 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+async def advice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Провіряємо чи юзер існує в базі
+    ensure_user(update)
+    
+    CAPY_ADVICE = [
+    "Ходять легенди, що капібара з гарним ім'ям може отримати дари від богів. Зазвичай...",
+    "Ефекти (благословення та прокляття) можуть як з'явитися так і зникнути з шансом 10% після кожного твого годування",
+    "Судний день настає кожні чотири дні, бо боги капібар далі не вміють рахувати" ]
+    # Вибираємо рандомну пораду
+    random_advice = random.choice(CAPY_ADVICE)
+    
+    # Відправляємо повідомлення
+    await update.message.reply_text(
+        f"📜 **Порада від Капібари:**\n\n_{random_advice}_",
+        parse_mode="Markdown"
+    )
+
 async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(update.effective_user.id)
 
@@ -532,6 +581,25 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❔ Тут нема чого видаляти.")
 
+async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Отримуємо всіх користувачів
+    users = list(users_col.find({}))
+    count = 0
+
+    for u in users:
+        old_weight = u.get("weight", 20.0)
+        # Магічна формула округлення до 0.5
+        new_weight = round(old_weight * 2) / 2
+        
+        # Оновлюємо в базі
+        users_col.update_one(
+            {"_id": u["_id"]},
+            {"$set": {"weight": new_weight}}
+        )
+        count += 1
+
+    await update.message.reply_text(f"✅ Магічне вирівнювання завершено!\nОновлено капібар: **{count}**\nТепер всі ваги кратні 0.5 кг.")
+
 # ===================== RUN =====================
 
 def main():
@@ -546,6 +614,8 @@ def main():
     app_tg.add_handler(CommandHandler("stats", stats))
     app_tg.add_handler(CommandHandler("top", leaderboard))
     app_tg.add_handler(CommandHandler("delete", delete_kapy))
+    app_tg.add_handler(CommandHandler("advice", advice))
+    app_tg.add_handler(CommandHandler("update", update))
     app_tg.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
 
     app_tg.run_polling()
