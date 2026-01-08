@@ -53,8 +53,8 @@ EDGY_JOKES = [
     "Ще один шматочок, і вона пригравітує Місяць до Землі 🌌",
     "Твоя капібара виглядає так, ніби вона щойно з'їла чиїсь надії та мрії 💭",
     "Твоя капібара стала на крок ближче до ідеальної форми кулі ⚪️",
-    "Вона їсть, щоб забути про порожнечу ventilated всередині. Як і ти... 🕳",
-    "Сподіваюся, ти теж так дбаєш про власне здоров'я, як про цю товстуню... 🧂",
+    "Вона їсть, щоб забути про порожнечу всередині себе. Як і ти... 🕳",
+    "Сподіваюся, ти теж так дбаєш про власне здоров'я, як про цього стронгмена... 🧂",
     "Вона стає настільки великою, що скоро держава забере її на прогодівлю ЗСУ 🫡",
     "Це не вага, це накопичена ненависть до людства 😈",
     "Твоя капібара бачила пекло, і сказала, що там недостатньо апельсинів 🍊",
@@ -397,16 +397,12 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await maybe_auto_judgment(update)
 
 async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin_ids = ["807986999"]  # Telegram IDs of allowed admin (me)
+    admin_ids = [807986999]  # Telegram IDs of allowed admin (me)
     if str(update.effective_user.id) not in admin_ids:
         await update.message.reply_text(f"❌ Доступ заборонено. Ваш ID: {update.effective_user.id}")
         return
     c_id = str(update.effective_chat.id)
     users = list(users_col.find({"chats": c_id}))
-
-    if len(users) < 2:
-        await update.message.reply_text("⚠️ Замало капібар для суду.")
-        return
 
     effect = random.choice([
         "усереднення",
@@ -532,7 +528,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg += (
             f"{i}. 🐾 **{u['kapy_name']}**"
-            f"  (👤 {tg}) - "
+            f"  ({tg}) - "
             f"{weight_txt}\n\n"
         )
 
@@ -580,6 +576,60 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text("❔ Тут нема чого видаляти.")
+
+async def gacha(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    GACHA_ITEMS = {
+    "Common": [
+        {"name": "Дерев'яний патик"}
+    ],
+    "Rare": [
+        {"name": "Фотокамера"},
+    ],
+    "Legendary": [
+       {"name": "Договоняк"}
+    ]
+}
+
+    uid = str(update.effective_user.id)
+    u = users_col.find_one({"_id": uid})
+    
+    cost = 20.0  # Ціна однієї спроби — 20 кг
+    
+    if u.get("weight", 0) < cost + 5.0: # Залишаємо мінімум 5кг, щоб не вбити капібару
+        await update.message.reply_text(
+            f"❌ Твоя капібара занадто худа для жертвоприношення!\n"
+            f"Потрібно мінімум **{cost + 5.0}кг**, а у тебе {u['weight']}кг."
+        )
+        return
+
+    # Анімація казино
+    msg = await update.message.reply_text("🎰 **ЖЕРТВОПРИНОШЕННЯ ВАГИ...**")
+    
+    # Визначаємо рарність
+    r = random.random()
+    if r < 0.07: rarity = "Legendary"
+    elif r < 0.25: rarity = "Rare"
+    else: rarity = "Common"
+
+    item = random.choice(GACHA_ITEMS[rarity])
+    
+    # Оновлення бази: мінусуємо вагу, додаємо артефакт
+    users_col.update_one(
+        {"_id": uid},
+        {
+            "$inc": {"weight": -cost},
+            "$addToSet": {"artifacts": item["name"]} # Додаємо в унікальний список артефактів
+        }
+    )
+
+    await msg.edit_text(
+        f"🎰 **ГАЗИНО КАПІБАР**\n"
+        f"📉 Витрачено: **-{cost}кг** ваги\n\n"
+        f"✨ Випав артефакт: **[{rarity}] {item['name']}**\n"
+        f"📜 Ефект: _{item['desc']}_",
+        parse_mode="Markdown"
+    )
 
 async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Отримуємо всіх користувачів
