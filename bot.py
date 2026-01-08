@@ -494,7 +494,7 @@ async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE
             try:
                 await context.bot.send_message(chat_id=c_id, text=msg, parse_mode="Markdown")
             except: pass
-        else:
+    else:
             await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -689,7 +689,7 @@ def main():
     job_queue.run_repeating(
         lambda ctx: judgment_day(None, ctx), # Передаємо None замість update
         interval=345600, 
-        first=datetime.time(hour=20, minute=0, tzinfo=kyiv_tz)
+        first=datetime.time(hour=20, minute=7, tzinfo=kyiv_tz)
     )
 
     app_tg.add_handler(CommandHandler("start", start))
