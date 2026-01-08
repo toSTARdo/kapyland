@@ -3,7 +3,8 @@ import random
 import threading
 import math
 import pymongo
-from datetime import datetime
+import pytz
+from datetime import datetime, time, timedelta
 from flask import Flask
 from telegram import Update
 from telegram.ext import (
@@ -13,10 +14,6 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from telegram.helpers import escape_markdown
-import datetime
-import pytz # Додай у requirements.txt, щоб часовий пояс працював чітко
-
 # ===================== WEB =====================
 
 app = Flask(__name__)
