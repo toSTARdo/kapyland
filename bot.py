@@ -551,8 +551,6 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args[0] != "YES":
         await update.message.reply_text("❌ Видалення скасовано.")
         return
-import datetime
-import pytz # Додай у requirements.txt, щоб часовий пояс працював чітко
     res = users_col.delete_one({"_id": uid})
 
     if res.deleted_count:
