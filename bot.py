@@ -367,6 +367,7 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = ["807986999"]  # Telegram IDs of allowed admin (me)
     if str(update.effective_user.id) not in admin_ids:
+        await update.message.reply_text(f"❌ Доступ заборонено. Ваш ID: {update.effective_user.id}")
         return
     c_id = str(update.effective_chat.id)
     users = list(users_col.find({"chats": c_id}))
@@ -486,7 +487,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c_id = str(update.effective_chat.id)
     top = users_col.find({"chats": c_id}).sort("weight", -1).limit(10)
 
-    msg = "🏆**ЗАЛ КАПІСЛАВИ**🏆\n\n"
+    msg = "🏆 **ЗАЛ КАПІСЛАВИ** 🏆\n\n"
 
     for i, u in enumerate(top, start=1):
         tg = (
