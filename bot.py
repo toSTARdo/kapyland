@@ -14,6 +14,8 @@ from telegram.ext import (
     filters,
 )
 from telegram.helpers import escape_markdown
+import datetime
+import pytz # Додай у requirements.txt, щоб часовий пояс працював чітко
 
 # ===================== WEB =====================
 
@@ -238,19 +240,9 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upsert=True,
     )
 
-async def maybe_auto_judgment(update: Update):
-    c_id = str(update.effective_chat.id)
-    if not is_sunday():
-        return
-
-    if not all_fed_today(c_id):
-        return
-
     state = chat_state_col.find_one({"chat_id": c_id})
     if state and state.get("week") == week_id() and state.get("judged"):
         return
-
-    await judgment_day(update, None)
 
     chat_state_col.update_one(
         {"chat_id": c_id},
@@ -393,14 +385,7 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
-    # 8️⃣ Можливе автоматичне судження у неділю
-    await maybe_auto_judgment(update)
-
 async def judgment_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin_ids = [807986999]  # Telegram IDs of allowed admin (me)
-    if str(update.effective_user.id) not in admin_ids:
-        await update.message.reply_text(f"❌ Доступ заборонено. Ваш ID: {update.effective_user.id}")
-        return
     c_id = str(update.effective_chat.id)
     users = list(users_col.find({"chats": c_id}))
 
@@ -566,7 +551,8 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args[0] != "YES":
         await update.message.reply_text("❌ Видалення скасовано.")
         return
-
+import datetime
+import pytz # Додай у requirements.txt, щоб часовий пояс працював чітко
     res = users_col.delete_one({"_id": uid})
 
     if res.deleted_count:
@@ -631,6 +617,22 @@ async def gacha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+GOODNIGHT_JOKES = [
+    "намагається напрограмувати цей клятий бот"
+]
+
+async def send_goodnight(context: ContextTypes.DEFAULT_TYPE):
+    # Отримуємо всі унікальні чати
+    chats = users_col.distinct("chats")
+    joke = random.choice(GOODNIGHT_JOKES)
+    text = f"🌙 **Надобраніч від капібари, яка {joke}.**"
+    
+    for chat_id in chats:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Помилка надсилання в {chat_id}: {e}")
+
 async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Отримуємо всіх користувачів
     users = list(users_col.find({}))
@@ -655,7 +657,25 @@ async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     threading.Thread(target=run_flask, daemon=True).start()
 
+    # Створюємо додаток
     app_tg = Application.builder().token(os.environ["BOT_TOKEN"]).build()
+
+    # Налаштовуємо час (наприклад, 22:00 за Києвом)
+    job_queue = app_tg.job_queue
+    kyiv_tz = pytz.timezone("Europe/Kyiv")
+    # 1. Надобраніч (щодня о 22:00)
+    job_queue.run_daily(
+        send_goodnight, 
+        time=datetime.time(hour=19, minute=40, tzinfo=kyiv_tz)
+    )
+
+    # 2. Судний День (кожні 4 дні о 20:00)
+    # interval = 345600 секунд (4 дні)
+    job_queue.run_repeating(
+        judgment_day_job, 
+        interval=345600, 
+        first=datetime.time(hour=19, minute=41, tzinfo=kyiv_tz)
+    )
 
     app_tg.add_handler(CommandHandler("start", start))
     app_tg.add_handler(CommandHandler("name", set_name))
