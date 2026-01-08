@@ -597,15 +597,55 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def gacha(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     GACHA_ITEMS = {
-    "Common": [{"name": "Дерев'яний патик", "desc": "Просто палиця. Нічого не робить, але капібара рада."}],
-    "Rare": [{"name": "Фотокамера", "desc": "Тепер ви робите естетичні фото капібари."}],
-    "Legendary": [{"name": "Договоняк", "desc": "Боги заплющують очі на ваші гріхи."}]
+    "Common": [
+        {
+            "name": "Шоколадка Рошен",
+            "desc": "Солодка."
+        },
+        {
+            "name": "Бурулька",
+            "desc": "Геніталії сніговика."
+        }
+    ],
+
+    "Rare": [
+        {
+            "name": "Камінь",
+            "desc": "Має неймовірну аеродинаміку"
+        },
+        {
+            "name": "Диплом",
+            "desc": "Спочатку ти страждав заради нього, а тепер твій ворог."
+        }
+    ],
+
+    "Epic": [
+        {
+            "name": "Самогон»",
+            "desc": "По секретному рецепту діда."
+        },
+        {
+            "name": "Кувалда",
+            "desc": "Терпи, терпець тебе шліфує. І додатково трощить череп..."
+        }
+    ],
+
+    "Legendary": [
+        {
+            "name": "Кішчяче життя",
+            "desc": "По старій дружбі твій друг кіт подарував одне з його життів"
+        },
+        {
+            "name": "Чайний патик",
+            "desc": "Зібравши в собі аромат та ярлики всіх чаїв світу робить тебе непереможним"
+        }
+    ]
 }
 
     uid = str(update.effective_user.id)
     u = users_col.find_one({"_id": uid})
     
-    cost = 20.0  # Ціна однієї спроби — 20 кг
+    cost = 10.0  # Ціна однієї спроби — 20 кг
     
     if u.get("weight", 0) < cost + 5.0: # Залишаємо мінімум 5кг, щоб не вбити капібару
         await update.message.reply_text(
@@ -617,11 +657,17 @@ async def gacha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Анімація казино
     msg = await update.message.reply_text("🎰 **ЖЕРТВОПРИНОШЕННЯ ВАГИ...**")
     
-    # Визначаємо рарність
     r = random.random()
-    if r < 0.07: rarity = "Legendary"
-    elif r < 0.25: rarity = "Rare"
-    else: rarity = "Common"
+
+    if r < 0.02:
+        rarity = "Legendary"   # 2%
+    elif r < 0.10:
+        rarity = "Epic"        # 8%
+    elif r < 0.30:
+        rarity = "Rare"        # 20%
+    else:
+        rarity = "Common"      # 70%
+
 
     item = random.choice(GACHA_ITEMS[rarity])
     
@@ -646,10 +692,54 @@ GOODNIGHT_JOKES = [
     "намагається напрограмувати цей клятий бот"
 ]
 
+import random
+import asyncio
+import time
+from telegram import Update
+from telegram.ext import ContextTypes
+
+WEAPONS = {
+    "Шоколадка Рошен": {
+        "text": "посадила підшлункову",
+        "hit_bonus": 0.05
+    },
+    "Бурулька": {
+        "text": "колола бурулькою",
+        "hit_bonus": 0.07
+    },
+    "Камінь": {
+        "text": "кинула і розвалила голову",
+        "hit_bonus": 0.1
+    },
+    "Диплом": {
+        "text": "удар дипломом (хоч тут згодився)",
+        "hit_bonus": 0.15
+    },
+    "Самогон": {
+        "text": "кастанула цироз печінки",
+        "hit_bonus": 0.1,
+        "effect": "memory"
+    },
+    "Кувалда": {
+        "text": "розвалила голову кувалдою",
+        "hit_bonus": 0.1,
+        "effect": "stun"
+    },
+    "Кішчяче життя": {
+        "text": "додаткове життя від котика!",
+        "hit_bonus": 0.1
+    },
+    "Чайний патик": {
+        "text": "зробила перший удар з силою чаю",
+        "hit_bonus": 0.25,
+        "first_strike": True
+    }
+}
+
 async def fight(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
+
     uid = str(update.effective_user.id)
-    c_id = str(update.effective_chat.id)
 
     if not update.message.reply_to_message:
         await update.message.reply_text("🥊 Відповідай `/fight` на повідомлення опонента!")
@@ -657,7 +747,12 @@ async def fight(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     target_id = str(update.message.reply_to_message.from_user.id)
     if uid == target_id:
-        await update.message.reply_text("🍎 Цей бот не найкращий для боротьби з власними демонами...")
+        await update.message.reply_text("🍎 Неможливо битися із самим собою.")
+        return
+
+    # анти-абʼюз по часу
+    if time.time() - update.message.reply_to_message.date.timestamp() > 90:
+        await update.message.reply_text("⌛ Це повідомлення занадто старе.")
         return
 
     u1 = users_col.find_one({"_id": uid})
@@ -667,79 +762,125 @@ async def fight(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👤 Ворог не має капібари.")
         return
 
-    # Ініціалізація віртуальних HP (базуються на вазі, але для бою вони рівні)
-    hp1, hp2 = 3, 3 
-    name1, name2 = u1['kapy_name'], u2['kapy_name']
-    
-    # Розрахунок шансу на основі ваги (дає невеликий бонус до атаки)
-    weight_bonus = (u1['weight'] - u2['weight']) / 50
-    
-    battle_msg = await update.message.reply_text(
-        f"⚔️ **БІЙ ПОЧАТО!**\n\n🟢 {name1}: ❤️❤️❤️\n🔴 {name2}: ❤️❤️❤️"
-    )
+    now = time.time()
+    if now - u1.get("last_fight", 0) < 60:
+        await update.message.reply_text("⏳ Капібара ще відновлюється.")
+        return
 
-    actions = [
-        "застосувала таранний удар",
-        "зробила швидкий випад лапою",
-        "провела серію коротких ударів",
-        "використала власну вагу для поштовху",
-        "здійснила різкий кусь",
-        "спробувала збити суперника з ніг",
-        "завдала удару головою",
-        "вдарила суперника з розвороту",
-        "захопила ініціативу в ближньому бою",
-        "зробила обманний маневр і атакувала",
-        "спробувала притиснути суперника до землі",
-        "завдала серію ударів по корпусу",
-        "використала інерцію для удару",
-        "різко скоротила дистанцію для атаки"
-    ]
+    if u1.get("in_fight") or u2.get("in_fight"):
+        await update.message.reply_text("⚠️ Хтось уже в бою.")
+        return
 
-    # Цикл покрокового бою
-    for round_num in range(1, 10): # Максимум 9 ходів
-        await asyncio.sleep(1.5)
-        
-        # Хто атакує в цьому раунді?
-        attacker_name, defender_name = (name1, name2) if round_num % 2 != 0 else (name2, name1)
-        
-        # Шанс влучання (50% + бонус ваги для першого гравця)
-        hit_chance = 0.5 + (weight_bonus if round_num % 2 != 0 else -weight_bonus)
-        
-        if random.random() < hit_chance:
-            if round_num % 2 != 0: hp2 -= 1
-            else: hp1 -= 1
-            action_text = f"💥 **{attacker_name}** {random.choice(actions)}"
-        else:
-            action_text = f"💨 **{attacker_name}** промахнулася, бо задивилася нв твої красиві очі..."
+    users_col.update_one({"_id": uid}, {"$set": {"in_fight": True, "last_fight": now}})
+    users_col.update_one({"_id": target_id}, {"$set": {"in_fight": True}})
 
-        # Оновлюємо візуалізацію HP
-        hp_bar1 = "❤️" * max(0, hp1) + "🖤" * (3 - max(0, hp1))
-        hp_bar2 = "❤️" * max(0, hp2) + "🖤" * (3 - max(0, hp2))
-        
-        await battle_msg.edit_text(
-            f"🏟 **Раунд {round_num}**\n\n"
-            f"{action_text}\n\n"
-            f"🟢 {name1}: {hp_bar1}\n"
-            f"🔴 {name2}: {hp_bar2}",
+    try:
+        # HP
+        hp1 = hp2 = 3
+        name1, name2 = u1["kapy_name"], u2["kapy_name"]
+
+        a1 = list(u1.get("artifacts", []))
+        a2 = list(u2.get("artifacts", []))
+
+        w1 = random.choice(a1) if a1 else None
+        w2 = random.choice(a2) if a2 else None
+
+        skip1 = skip2 = False
+        first_strike_done = set()
+
+        battle_msg = await update.message.reply_text(
+            f"⚔️ **БІЙ ПОЧАТО!**\n\n"
+            f"🟢 {name1}: ❤️❤️❤️\n"
+            f"🔴 {name2}: ❤️❤️❤️",
             parse_mode="Markdown"
         )
 
-        if hp1 <= 0 or hp2 <= 0:
-            break
+        for round_num in range(1, 10):
+            await asyncio.sleep(3)
 
-    # Фінал
-    await asyncio.sleep(1)
-    winner_id, winner_name, loser_id, loser_name = (uid, name1, target_id, name2) if hp1 > hp2 else (target_id, name2, uid, name1)
+            attacker_is_1 = round_num % 2 != 0
+            attacker_name = name1 if attacker_is_1 else name2
+            defender_name = name2 if attacker_is_1 else name1
+            weapon = w1 if attacker_is_1 else w2
 
-    users_col.update_one({"_id": winner_id}, {"$inc": {"weight": 0.5}})
-    users_col.update_one({"_id": loser_id}, {"$inc": {"weight": -0.5}})
+            if attacker_is_1 and skip1:
+                skip1 = False
+                continue
+            if not attacker_is_1 and skip2:
+                skip2 = False
+                continue
 
-    await battle_msg.edit_text(
-        f"🏆 **ПЕРЕМОГА!**\n\n"
-        f"Переможець: **{winner_name}** (+0.5кг)\n"
-        f"Переможений: **{loser_name}** (-0.5кг)",
-        parse_mode="Markdown"
-    )
+            hit_chance = 0.5
+            text = ""
+
+            if weapon and weapon in WEAPONS:
+                hit_chance += WEAPONS[weapon].get("hit_bonus", 0)
+
+            if random.random() < hit_chance:
+                if attacker_is_1:
+                    hp2 -= 1
+                else:
+                    hp1 -= 1
+
+                if weapon and weapon in WEAPONS:
+                    text = f"💥 **{attacker_name}** {WEAPONS[weapon]['text']}!"
+                else:
+                    text = f"💥 **{attacker_name}** атакувала лапами!"
+
+                # ефекти
+                effect = WEAPONS.get(weapon, {}).get("effect")
+                if effect == "memory" and random.random() < 0.25:
+                    skip2 = attacker_is_1
+                    skip1 = not attacker_is_1
+                    text += "\n🧠 Памʼять суперника затьмарена!"
+
+                if effect == "stun" and random.random() < 0.2:
+                    skip2 = attacker_is_1
+                    skip1 = not attacker_is_1
+                    text += "\n🌀 Суперник приголомшений!"
+
+                if WEAPONS.get(weapon, {}).get("first_strike") and weapon not in first_strike_done:
+                    first_strike_done.add(weapon)
+                    if attacker_is_1:
+                        hp2 -= 1
+                    else:
+                        hp1 -= 1
+                    text += "\n⚡ ПЕРШЕ РІШЕННЯ — подвійний удар!"
+
+            else:
+                text = f"💨 **{attacker_name}** промахнулася."
+
+            hp_bar1 = "❤️" * max(0, hp1) + "🖤" * (3 - max(0, hp1))
+            hp_bar2 = "❤️" * max(0, hp2) + "🖤" * (3 - max(0, hp2))
+
+            await battle_msg.edit_text(
+                f"🏟 **Раунд {round_num}**\n\n{text}\n\n"
+                f"🟢 {name1}: {hp_bar1}\n"
+                f"🔴 {name2}: {hp_bar2}",
+                parse_mode="Markdown"
+            )
+
+            if hp1 <= 0 or hp2 <= 0:
+                break
+
+        winner_id, winner_name, loser_id, loser_name = (
+            (uid, name1, target_id, name2) if hp1 > hp2
+            else (target_id, name2, uid, name1)
+        )
+
+        users_col.update_one({"_id": winner_id}, {"$inc": {"weight": 0.5}})
+        users_col.update_one({"_id": loser_id}, {"$inc": {"weight": -0.5}})
+
+        await battle_msg.edit_text(
+            f"🏆 **ПЕРЕМОГА!**\n\n"
+            f"Переможець: **{winner_name}** (+0.5кг)\n"
+            f"Переможений: **{loser_name}** (-0.5кг)",
+            parse_mode="Markdown"
+        )
+
+    finally:
+        users_col.update_one({"_id": uid}, {"$set": {"in_fight": False}})
+        users_col.update_one({"_id": target_id}, {"$set": {"in_fight": False}})
 
 async def send_goodnight(context: ContextTypes.DEFAULT_TYPE):
     # Отримуємо всі унікальні чати
