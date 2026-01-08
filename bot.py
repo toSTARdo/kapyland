@@ -4,6 +4,7 @@ import threading
 import math
 import pymongo
 import pytz
+import asyncio
 from flask import Flask
 from datetime import datetime, time as dt_time # Імпортуємо клас datetime і перейменовуємо клас time
 from telegram import Update
@@ -17,21 +18,11 @@ from telegram.ext import (
 from telegram.helpers import escape_markdown
 
 # ===================== VERSION INFO =====================
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 CHANGELOG = """
-📜 ОФІЦІЙНИЙ РЕЛІЗ v1.0.0
-
-До цієї миті ми пройшли довгий шлях:
-• Створення всесвіту Капібар
-• Еволюція від однієї капі на світ до особистих у кожному чаті
-• Впровадження системи Судного Дня (автоматично кожні 4 дні)
-• Система благословеннь, проклятть та довічних кайданів (повна не багів а фіч)
-
-З нововведень:
-• Захист від Мarkdown-ін'єкцій
-• Щовечірні побажання надобраніч від капібар :3
-• Додано сповіщення нової версії
-• На комп'ютер Олександра Федорича встановлена malware, дані його компанії будуть зчитуватися, а його капібара викликається в Гаагу для суду
+• Додано тестову систему боїв
+• Додано покарання за неприйнятну лексику
+• Додано кілька пасхалок
 """
 # ===================== WEB =====================
 
@@ -90,7 +81,7 @@ FAIL_MESSAGES = [
 EQUILIBRIUM_MESSAGES = [
     "Капібара на відміну від тебе пішла мацати траву 🌱",
     "Сила волі мандаринки виявилася сильніша і вона не перетравилася 🍊",
-    "Вона проігнорувала твої намагання. Вона вища за це 🏔",
+    "Вона проігнорувала твої намагання. Вона вища за це 🏔"• На комп'ютер Олександра Федорича встановлена malware, дані його компанії будуть зчитуватися, а його капібара викликається в Гаагу для суду,
     "Капібарка змерзла і вийшла в нуль, спаливши калорії ❄️",
 ]
 
@@ -274,45 +265,77 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
     uid = str(update.effective_user.id)
-    name = " ".join(context.args)[:30]
-    name = escape_markdown(name, version=2)
+    raw_name = " ".join(context.args)[:30]
     
-    if not name:
+    if not raw_name:
         await update.message.reply_text("📝 Пиши: `/name Ім'я`", parse_mode="Markdown")
         return
 
-    # 1. Словник з секретними іменами та бонусами
+    u = users_col.find_one({"_id": uid})
+    used_eggs = u.get("used_easter_eggs", []) # Список уже використаних бонусів
+    
+        # Гігантський список для фільтрації (UA + EN)
+    BAD_WORDS = [
+        # Українська та суржик
+        "хуй", "хуя", "хуєм", "хуї", "пізда", "пізду", "піздєц", "єблан", "єбать", 
+        "в’їбати", "виїбони", "сука", "сучка", "курва", "мудак", "мудило", "гандон", 
+        "чмо", "лох", "підор", "підарас", "блєді", "бля", "блядь", "блєть", "заїбав", 
+        "похуй", "нахуй", "піхуй", "отпіздити", "манда", "єбало", "їбало", "шльондра", 
+        "лярва", "падла", "стерво", "виродок", "уєбан", "уєбище", "дрючити", "хер", 
+        "хєрня", "дрочити", "сцикун", "гівно", "лайно", "дупа", "срака", "жертва аборту",
+
+        # Англійська (основні та сленг)
+        "fuck", "fucking", "fucker", "shit", "shitty", "bullshit", "ass", "asshole", 
+        "bitch", "bastard", "dick", "cock", "pussy", "cunt", "faggot", "nigger", 
+        "retard", "slut", "whore", "motherfucker", "dumbass", "cum", "semen", 
+        "deepshit", "jackass", "prick", "wanker", "twat", "douche", "douchebag",
+        "bollocks", "crap", "piss", "scum"
+    ]
     EASTER_EGGS = {
-        "Труп": 5.0,
-        "Політех": -15.0,
-        "Гачібара": 20.0,
-        "Капібара": 10.0,
-        "Тетерів": 10.0,
-        "Капібара": 10.0,
-        "Розробник": 1.0  # символічний бонус
+        "Труп": 5.0, "Політех": -15.0, "Гачібара": 20.0,
+        "Капібара": 10.0, "Тетерів": 10.0, "Розробник": 1.0,
+        "Тарас": 5.0, "Славік": 5.0, "Саша": 5.0, "Андрій": 5.0,
+        "Квас": 20.0, "Stardew valley": 5.0
     }
 
-    bonus_msg = ""
+    penalty_weight = 0.0
     bonus_weight = 0.0
+    status_msg = ""
+    egg_to_register = None
 
-    # 2. Перевірка на співпадіння (ігноруючи регістр)
+    # 1. Штраф за мати (працює ЗАВЖДИ)
+    if any(bad.lower() in raw_name.lower() for bad in BAD_WORDS):
+        penalty_weight = -5.0
+        status_msg += f"\n🤬 **Податок на лайку:** -5кг."
+
+    # 2. Бонус за пасхалку (працює ОДИН РАЗ на кожне слово)
     for egg_name, weight in EASTER_EGGS.items():
-        if name.lower() == egg_name.lower():
-            bonus_weight = weight
-            bonus_msg = f"\n✨ Ого! Це легендарне ім'я додало тобі **{bonus_weight}кг**!"
+        if raw_name.lower() == egg_name.lower():
+            if egg_name not in used_eggs:
+                bonus_weight = weight
+                egg_to_register = egg_name
+                status_msg += f"\n✨ Ого! Легендарне ім'я додало тобі **{bonus_weight}кг**!"
+            else:
+                status_msg += f"\n💡 Ти вже отримувала бонус за ім'я '{egg_name}', вдруге не спрацює, хитродупа капібара!"
             break
 
-    # 3. Оновлюємо ім'я та додаємо вагу (якщо є бонус)
-    users_col.update_one(
-        {"_id": uid},
-        {
-            "$set": {"kapy_name": name},
-            "$inc": {"weight": bonus_weight} # $inc додає значення до існуючого
-        }
-    )
+    safe_name = escape_markdown(raw_name, version=2)
+    total_change = bonus_weight + penalty_weight
+    
+    # 3. Оновлення бази
+    update_ops = {
+        "$set": {"kapy_name": safe_name},
+        "$inc": {"weight": total_change}
+    }
+    
+    # Якщо була нова пасхалка, додаємо її в список використаних
+    if egg_to_register:
+        update_ops["$addToSet"] = {"used_easter_eggs": egg_to_register}
+
+    users_col.update_one({"_id": uid}, update_ops)
 
     await update.message.reply_text(
-        f"✅ Тепер цю купу хутра звати **{name}**.{bonus_msg}",
+        f"✅ Тепер капібару звати **{safe_name}**.{status_msg}",
         parse_mode="Markdown"
     )
 
@@ -623,6 +646,101 @@ GOODNIGHT_JOKES = [
     "намагається напрограмувати цей клятий бот"
 ]
 
+async def fight(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update)
+    uid = str(update.effective_user.id)
+    c_id = str(update.effective_chat.id)
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("🥊 Відповідай `/fight` на повідомлення опонента!")
+        return
+
+    target_id = str(update.message.reply_to_message.from_user.id)
+    if uid == target_id:
+        await update.message.reply_text("🍎 Цей бот не найкращий для боротьби з власними демонами...")
+        return
+
+    u1 = users_col.find_one({"_id": uid})
+    u2 = users_col.find_one({"_id": target_id})
+
+    if not u2:
+        await update.message.reply_text("👤 Ворог не має капібари.")
+        return
+
+    # Ініціалізація віртуальних HP (базуються на вазі, але для бою вони рівні)
+    hp1, hp2 = 3, 3 
+    name1, name2 = u1['kapy_name'], u2['kapy_name']
+    
+    # Розрахунок шансу на основі ваги (дає невеликий бонус до атаки)
+    weight_bonus = (u1['weight'] - u2['weight']) / 50
+    
+    battle_msg = await update.message.reply_text(
+        f"⚔️ **БІЙ ПОЧАТО!**\n\n🟢 {name1}: ❤️❤️❤️\n🔴 {name2}: ❤️❤️❤️"
+    )
+
+    actions = [
+        "застосувала таранний удар",
+        "зробила швидкий випад лапою",
+        "провела серію коротких ударів",
+        "використала власну вагу для поштовху",
+        "здійснила різкий кусь",
+        "спробувала збити суперника з ніг",
+        "завдала удару головою",
+        "вдарила суперника з розвороту",
+        "захопила ініціативу в ближньому бою",
+        "зробила обманний маневр і атакувала",
+        "спробувала притиснути суперника до землі",
+        "завдала серію ударів по корпусу",
+        "використала інерцію для удару",
+        "різко скоротила дистанцію для атаки"
+    ]
+
+    # Цикл покрокового бою
+    for round_num in range(1, 10): # Максимум 9 ходів
+        await asyncio.sleep(1.5)
+        
+        # Хто атакує в цьому раунді?
+        attacker_name, defender_name = (name1, name2) if round_num % 2 != 0 else (name2, name1)
+        
+        # Шанс влучання (50% + бонус ваги для першого гравця)
+        hit_chance = 0.5 + (weight_bonus if round_num % 2 != 0 else -weight_bonus)
+        
+        if random.random() < hit_chance:
+            if round_num % 2 != 0: hp2 -= 1
+            else: hp1 -= 1
+            action_text = f"💥 **{attacker_name}** {random.choice(actions)}"
+        else:
+            action_text = f"💨 **{attacker_name}** промахнулася, бо задивилася нв твої красиві очі..."
+
+        # Оновлюємо візуалізацію HP
+        hp_bar1 = "❤️" * max(0, hp1) + "🖤" * (3 - max(0, hp1))
+        hp_bar2 = "❤️" * max(0, hp2) + "🖤" * (3 - max(0, hp2))
+        
+        await battle_msg.edit_text(
+            f"🏟 **Раунд {round_num}**\n\n"
+            f"{action_text}\n\n"
+            f"🟢 {name1}: {hp_bar1}\n"
+            f"🔴 {name2}: {hp_bar2}",
+            parse_mode="Markdown"
+        )
+
+        if hp1 <= 0 or hp2 <= 0:
+            break
+
+    # Фінал
+    await asyncio.sleep(1)
+    winner_id, winner_name, loser_id, loser_name = (uid, name1, target_id, name2) if hp1 > hp2 else (target_id, name2, uid, name1)
+
+    users_col.update_one({"_id": winner_id}, {"$inc": {"weight": 0.5}})
+    users_col.update_one({"_id": loser_id}, {"$inc": {"weight": -0.5}})
+
+    await battle_msg.edit_text(
+        f"🏆 **ПЕРЕМОГА!**\n\n"
+        f"Переможець: **{winner_name}** (+0.5кг)\n"
+        f"Переможений: **{loser_name}** (-0.5кг)",
+        parse_mode="Markdown"
+    )
+
 async def send_goodnight(context: ContextTypes.DEFAULT_TYPE):
     # Отримуємо всі унікальні чати
     chats = users_col.distinct("chats")
@@ -635,7 +753,7 @@ async def send_goodnight(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"Помилка надсилання в {chat_id}: {e}")
 
-async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def updategame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Отримуємо всіх користувачів
     users = list(users_col.find({}))
     count = 0
@@ -653,6 +771,44 @@ async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         count += 1
 
     await update.message.reply_text(f"✅ Магічне вирівнювання завершено!\nОновлено капібар: **{count}**\nТепер всі ваги кратні 0.5 кг.")
+
+async def audit_names(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Твій гігантський список (можна винести окремо)
+    BAD_WORDS = [
+        "хуй", "хуя", "хуєм", "хуї", "пізда", "пізду", "піздєц", "єблан", "єбать", 
+        "сука", "сучка", "курва", "мудак", "мудило", "гандон", "чмо", "лох", "підор", 
+        "підарас", "бля", "блядь", "заїбав", "похуй", "нахуй", "єбало", "їбало",
+        "fuck", "fucking", "shit", "asshole", "bitch", "bastard", "dick", "cock", 
+        "pussy", "cunt", "motherfucker", "cum" # ... і так далі
+    ]
+
+    users = list(users_col.find({}))
+    fined_count = 0
+    total_fines = 0.0
+    report = "🧹 **РЕВІЗІЯ ІМЕН ЗАВЕРШЕНА**\n\n"
+
+    for u in users:
+        kapy_name = u.get("kapy_name", "").lower()
+        # Очищуємо ім'я від символів для жорсткої перевірки (щоб не обійшли через "х.у.й")
+        clean_name = "".join(char for char in kapy_name if char.isalnum())
+        
+        if any(bad in clean_name for bad in BAD_WORDS):
+            # Штрафуємо на 5 кг
+            users_col.update_one(
+                {"_id": u["_id"]},
+                {"$inc": {"weight": -5.0}}
+            )
+            fined_count += 1
+            total_fines += 5.0
+            report += f"⚠️ **{u['tg_name']}** ({u['kapy_name']}): -5кг\n"
+
+    if fined_count > 0:
+        report += f"\n📉 Разом оштрафовано: **{fined_count}** капібар."
+        report += f"\n⚖️ Загальний прибуток богів: **{total_fines}кг**."
+    else:
+        report += "😇 Всі капібари чисті перед законом."
+
+    await update.message.reply_text(report, parse_mode="Markdown")
 
 async def notify_update(application: Application):
     # Отримуємо унікальні ID чатів з бази
@@ -686,15 +842,13 @@ def main():
     # Налаштовуємо час (наприклад, 22:00 за Києвом)
     job_queue = app_tg.job_queue
     kyiv_tz = pytz.timezone("Europe/Kyiv")
-    # 1. Надобраніч (щодня о 22:00)
+    # 1. Надобраніч (щодня о 19:50)
     job_queue.run_daily(
         send_goodnight, 
         time=dt_time(hour=19, minute=50, tzinfo=kyiv_tz)
     )
 
-    # 2. Судний День (кожні 4 дні о 20:00)
-    # interval = 345600 секунд (4 дні)
-    # 2. Судний День (кожні 4 дні о 20:00)
+    # 2. Судний День (кожні 4 дні о 20:35)
     job_queue.run_repeating(
         lambda ctx: judgment_day(None, ctx), # Передаємо None замість update
         interval=345600, 
@@ -706,11 +860,13 @@ def main():
     app_tg.add_handler(CommandHandler("start", start))
     app_tg.add_handler(CommandHandler("name", set_name))
     app_tg.add_handler(CommandHandler("feed", feed))
+    app_tg.add_handler(CommandHandler("fight", fight))
     app_tg.add_handler(CommandHandler("stats", stats))
     app_tg.add_handler(CommandHandler("top", leaderboard))
     app_tg.add_handler(CommandHandler("delete", delete_kapy))
     app_tg.add_handler(CommandHandler("advice", advice))
-    app_tg.add_handler(CommandHandler("update", update))
+    app_tg.add_handler(CommandHandler("update", updategame))
+    app_tg.add_handler(CommandHandler("audit", audit_names))
     app_tg.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
 
     app_tg.run_polling()
