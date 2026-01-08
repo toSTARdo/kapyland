@@ -234,22 +234,13 @@ def ensure_user(update: Update):
 async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
+    
+    chat_id = str(update.effective_chat.id)
     stats_col.update_one(
-        {"chat_id": str(update.effective_chat.id), "date": today()},
+        {"chat_id": chat_id, "date": today()},
         {"$inc": {"letters": len(update.message.text)}},
         upsert=True,
     )
-
-    state = chat_state_col.find_one({"chat_id": c_id})
-    if state and state.get("week") == week_id() and state.get("judged"):
-        return
-
-    chat_state_col.update_one(
-        {"chat_id": c_id},
-        {"$set": {"week": week_id(), "judged": True}},
-        upsert=True,
-    )
-
 # ===================== COMMANDS =====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -386,34 +377,24 @@ async def feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE):
-    # Визначаємо, чи це автоматичний запуск чи команда
     is_auto = update is None
-    
-    if is_auto:
-        # Для авто-запуску беремо всі чати з бази
-        chats = users_col.distinct("chats")
-    else:
-        # Для команди беремо тільки цей чат
-        chats = [str(update.effective_chat.id)]
+    chats = users_col.distinct("chats") if is_auto else [str(update.effective_chat.id)]
 
     for c_id in chats:
         users = list(users_col.find({"chats": c_id}))
         if not users: continue
 
-    effect = random.choice([
-        "усереднення",
-        "голодомор",
-        "урожай",
-        "сповідь",
-        "святе випробування",
-        "хрест",
-        "кара вавилону",
-        "піст",
-        "непорочне зачаття",
-        "гнів богів",
-    ])
+        if len(users) < 2:
+            # Можна відправити повідомлення, якщо це ручний запуск команди
+            if not is_auto:
+                await update.message.reply_text("Для суду необхідно мінімум дві капібари.")
+            continue
 
-    msg = f"⚡️ **СУДНИЙ ДЕНЬ: {effect.upper()}** ⚡️\n"
+        # Вибір ефекту (перенесено всередину циклу, щоб у кожного чату був свій хаос)
+        effect = random.choice(["усереднення", "голодомор", "урожай", "сповідь", "гнів богів","хрест","святе випробування",
+        "кара вавилону", "піст", "непорочне зачаття"])
+
+        msg = f"⚡️ **СУДНИЙ ДЕНЬ: {effect.upper()}** ⚡️\n"
 
     if effect == "усереднення":
         avg = round(sum(u["weight"] for u in users) / len(users), 2)
@@ -481,7 +462,7 @@ async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE
         t = random.choice(users)
         users_col.update_one(
             {"_id": t["_id"]},
-            {"$set": {"kapy_name": f"Ісус {t['kapy_name']}"}},
+            {"$set": {"kapy_name": f"Святий {t['kapy_name']}"}},
         )
         msg += f"👼 {t['kapy_name']} стала священною."
 
@@ -490,12 +471,9 @@ async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE
         users_col.delete_one({"_id": t["_id"]})
         msg += f"🔥 {t['kapy_name']} стерта з буття."
 
-    if is_auto:
-            try:
-                await context.bot.send_message(chat_id=c_id, text=msg, parse_mode="Markdown")
-            except: pass
-    else:
-            await update.message.reply_text(msg, parse_mode="Markdown")
+    try:
+            await context.bot.send_message(chat_id=c_id, text=msg, parse_mode="Markdown")
+        except: continue
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
@@ -580,15 +558,9 @@ async def delete_kapy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def gacha(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     GACHA_ITEMS = {
-    "Common": [
-        {"name": "Дерев'яний патик"}
-    ],
-    "Rare": [
-        {"name": "Фотокамера"},
-    ],
-    "Legendary": [
-       {"name": "Договоняк"}
-    ]
+    "Common": [{"name": "Дерев'яний патик", "desc": "Просто палиця. Нічого не робить, але капібара рада."}],
+    "Rare": [{"name": "Фотокамера", "desc": "Тепер ви робите естетичні фото капібари."}],
+    "Legendary": [{"name": "Договоняк", "desc": "Боги заплющують очі на ваші гріхи."}]
 }
 
     uid = str(update.effective_user.id)
