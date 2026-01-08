@@ -14,6 +14,25 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.helpers import escape_markdown
+
+# ===================== VERSION INFO =====================
+VERSION = "1.0.0"
+CHANGELOG = """
+📜 ОФІЦІЙНИЙ РЕЛІЗ v1.0.0
+
+До цієї миті ми пройшли довгий шлях:
+• Створення всесвіту Капібар
+• Еволюція від однієї капі на світ до особистих у кожному чаті
+• Впровадження системи Судного Дня (автоматично кожні 4 дні)
+• Система благословеннь, проклятть та довічних кайданів (повна не багів а фіч)
+
+З нововведень:
+• Захист від Мarkdown-ін'єкцій
+• Щовечірні побажання надобраніч від капібар :3
+• Додано сповіщення нової версії
+• На комп'ютер Олександра Федорича встановлена malware, дані його компанії будуть зчитуватися, а його капібара викликається в Гаагу для суду
+"""
 # ===================== WEB =====================
 
 app = Flask(__name__)
@@ -255,7 +274,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
     uid = str(update.effective_user.id)
-    name = " ".join(context.args)
+    name = " ".join(context.args)[:30]
+    name = escape_markdown(name, version=2)
     
     if not name:
         await update.message.reply_text("📝 Пиши: `/name Ім'я`", parse_mode="Markdown")
@@ -634,6 +654,27 @@ async def update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"✅ Магічне вирівнювання завершено!\nОновлено капібар: **{count}**\nТепер всі ваги кратні 0.5 кг.")
 
+async def notify_update(application: Application):
+    # Отримуємо унікальні ID чатів з бази
+    chats = users_col.distinct("chats")
+    
+    text = (
+        f"🚀 **Kapyland оновлено до v{VERSION}**\n\n"
+        f"**Що нового:**\n{CHANGELOG}\n\n"
+        f"🥗 /feed — Годувати капібару"
+    )
+
+    for c_id in chats:
+        try:
+            # Відправляємо повідомлення
+            await application.bot.send_message(
+                chat_id=c_id, 
+                text=text, 
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            print(f"Не вдалося сповістити чат {c_id}: {e}")
+
 # ===================== RUN =====================
 
 def main():
@@ -659,6 +700,8 @@ def main():
         interval=345600, 
         first=dt_time(hour=20, minute=35, tzinfo=kyiv_tz)
     )
+
+    app_tg.post_init = notify_update
 
     app_tg.add_handler(CommandHandler("start", start))
     app_tg.add_handler(CommandHandler("name", set_name))
