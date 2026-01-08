@@ -473,7 +473,7 @@ async def judgment_day(update: Update | None, context: ContextTypes.DEFAULT_TYPE
 
     try:
             await context.bot.send_message(chat_id=c_id, text=msg, parse_mode="Markdown")
-        except: continue
+    except: continue
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update)
