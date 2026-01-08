@@ -645,7 +645,7 @@ async def gacha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(update.effective_user.id)
     u = users_col.find_one({"_id": uid})
     
-    cost = 10.0  # Ціна однієї спроби — 20 кг
+    cost = 5.0  # Ціна однієї спроби — 20 кг
     
     if u.get("weight", 0) < cost + 5.0: # Залишаємо мінімум 5кг, щоб не вбити капібару
         await update.message.reply_text(
@@ -951,6 +951,46 @@ async def audit_names(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(report, parse_mode="Markdown")
 
+async def give(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Визначаємо ціль
+    if not context.args:
+        await update.message.reply_text("❌ Формат: `/give 2.5 @user` або reply + `/give 2.5`")
+        return
+
+    try:
+        mass = float(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Маса має бути числом.")
+        return
+
+    if mass <= 0:
+        await update.message.reply_text("❌ Маса має бути > 0.")
+        return
+
+    # ціль через reply або @username
+    target_user = None
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+    elif len(context.args) >= 2 and context.args[1].startswith("@"):
+        target_user = await context.bot.get_chat(context.args[1])
+    else:
+        await update.message.reply_text("❌ Вкажи користувача через @ або reply.")
+        return
+
+    target_id = str(target_user.id)
+    target = users_col.find_one({"_id": target_id})
+    if not target:
+        await update.message.reply_text("👤 У цього користувача немає капібари.")
+        return
+
+    # додаємо масу
+    users_col.update_one({"_id": target_id}, {"$inc": {"weight": mass}})
+
+    await update.message.reply_text(
+        f"📈 **{target_user.first_name}** отримав(ла) **{mass} кг** ваги!",
+        parse_mode="Markdown"
+    )
+
 async def notify_update(application: Application):
     # Отримуємо унікальні ID чатів з бази
     chats = users_col.distinct("chats")
@@ -1009,6 +1049,7 @@ def main():
     app_tg.add_handler(CommandHandler("update", updategame))
     app_tg.add_handler(CommandHandler("audit", audit_names))
     app_tg.add_handler(CommandHandler("gacha", gacha))
+    app_tg.add_handler(CommandHandler("give", give))
     app_tg.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
 
     app_tg.run_polling()
