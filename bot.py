@@ -4,8 +4,8 @@ import threading
 import math
 import pymongo
 import pytz
-from datetime import datetime, time, timedelta
 from flask import Flask
+from datetime import datetime, time as dt_time # Імпортуємо клас datetime і перейменовуємо клас time
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -104,13 +104,9 @@ CURSES = {
 # ===================== HELPERS =====================
 
 def today():
-    return datetime.now().strftime("%Y-%m-%d")
-
-def is_sunday():
-    return datetime.now().weekday() == 6
-
-def week_id():
-    return datetime.now().strftime("%Y-%W")
+    # Використовуємо часовий пояс Києва, щоб дата не зміщувалася вночі
+    tz = pytz.timezone("Europe/Kyiv")
+    return datetime.now(tz).strftime("%Y-%m-%d")
 
 def all_fed_today(chat_id):
     users = list(users_col.find({"chats": chat_id}))
@@ -652,7 +648,7 @@ def main():
     # 1. Надобраніч (щодня о 22:00)
     job_queue.run_daily(
         send_goodnight, 
-        time=datetime.time(hour=19, minute=50, tzinfo=kyiv_tz)
+        time=dt_time(hour=19, minute=50, tzinfo=kyiv_tz)
     )
 
     # 2. Судний День (кожні 4 дні о 20:00)
@@ -661,7 +657,7 @@ def main():
     job_queue.run_repeating(
         lambda ctx: judgment_day(None, ctx), # Передаємо None замість update
         interval=345600, 
-        first=datetime.time(hour=20, minute=35, tzinfo=kyiv_tz)
+        first=dt_time(hour=20, minute=35, tzinfo=kyiv_tz)
     )
 
     app_tg.add_handler(CommandHandler("start", start))
